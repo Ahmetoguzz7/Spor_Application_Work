@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:package_info_plus/package_info_plus.dart'; // Eklendi
-import 'package:open_file_plus/open_file_plus.dart'; // Güncellendi
-import 'dart:io';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:convert';
 
-// Kendi sayfaların
+// 👇 KENDİ SAYFALARIN (İmport yollarını kontrol etmeyi unutma)
 import 'package:my_app/managerpage/manager_interface.dart';
 import 'package:my_app/managerpage/signuppage/sign_admin.dart';
 import 'package:my_app/userInterfacepage/pt_login_page.dart/pt_signup.dart';
 import 'package:my_app/ptpage/user_loginandsignup_page/loginandsignup.dart';
 
+// 👇 GLOBAL NAVIGATOR KEY
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// 👇 BİLGİLERİNİ BURAYA DOĞRU GİR
-const String GITHUB_USERNAME = "kullanici_adin";
-const String GITHUB_REPO = "proje_adin";
+// 👇 GITHUB BİLGİLERİN
+const String GITHUB_USERNAME = "Ahmetoguzz7";
+const String GITHUB_REPO = "Spor_Application_Work";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +40,6 @@ class MyApp extends StatelessWidget {
 }
 
 class RoleSelectPage extends StatefulWidget {
-  // Update kontrolü için StatefulWidget yaptık
   const RoleSelectPage({super.key});
 
   @override
@@ -52,7 +50,7 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
   @override
   void initState() {
     super.initState();
-    // Uygulama açıldıktan hemen sonra kontrol et
+    // Uygulama açılırken güncelleme kontrolü yap
     WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate());
   }
 
@@ -67,15 +65,19 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
             future: getCurrentVersion(),
             builder: (context, snapshot) {
               return Padding(
-                padding: const EdgeInsets.only(right: 16.0),
-                child: Center(child: Text("v${snapshot.data ?? '...'}")),
+                padding: const EdgeInsets.only(right: 16),
+                child: Center(
+                  child: Text(
+                    "v${snapshot.data ?? '...'}",
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
               );
             },
           ),
         ],
       ),
       body: SingleChildScrollView(
-        // Ekran taşmalarına karşı
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
@@ -132,7 +134,7 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
+        contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
           radius: 25,
           backgroundColor: color,
@@ -147,11 +149,15 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
   }
 }
 
-// ==================== GÜNCELLEME MANTIĞI ====================
+// ==================== GÜNCELLEME FONKSİYONLARI ====================
 
 Future<String> getCurrentVersion() async {
-  final packageInfo = await PackageInfo.fromPlatform();
-  return packageInfo.version;
+  try {
+    final packageInfo = await PackageInfo.fromPlatform();
+    return packageInfo.version;
+  } catch (e) {
+    return "1.0.0";
+  }
 }
 
 Future<Map<String, dynamic>?> getLatestReleaseFromGitHub() async {
@@ -159,7 +165,6 @@ Future<Map<String, dynamic>?> getLatestReleaseFromGitHub() async {
     final url = Uri.parse(
       "https://api.github.com/repos/$GITHUB_USERNAME/$GITHUB_REPO/releases/latest",
     );
-    // GitHub API bazen User-Agent başlığı ister, eklemek güvenlidir.
     final response = await http.get(
       url,
       headers: {'Accept': 'application/vnd.github.v3+json'},
@@ -181,24 +186,21 @@ Future<Map<String, dynamic>?> getLatestReleaseFromGitHub() async {
             '',
           ),
           'downloadUrl': apkAsset['browser_download_url'],
-          'releaseNotes':
-              data['body'] ??
-              'Hata düzeltmeleri ve performans iyileştirmeleri.',
+          'releaseNotes': data['body'] ?? 'Yeni sürüm mevcut.',
         };
       }
     }
   } catch (e) {
-    debugPrint("GitHub Error: $e");
+    debugPrint("Güncelleme kontrolü hatası: $e");
   }
   return null;
 }
 
 bool isNewerVersion(String current, String latest) {
-  List<int> parseVersion(String v) =>
+  List<int> parse(String v) =>
       v.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-  final v1 = parseVersion(current);
-  final v2 = parseVersion(latest);
-
+  final v1 = parse(current);
+  final v2 = parse(latest);
   for (var i = 0; i < v2.length; i++) {
     int v1Part = i < v1.length ? v1[i] : 0;
     if (v2[i] > v1Part) return true;
@@ -225,33 +227,31 @@ void showUpdateDialog(Map<String, dynamic> release) {
     barrierDismissible: false,
     builder: (context) => AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("Güncelleme Mevcut! 🚀"),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Yeni sürüm: v${release['version']}"),
-            const SizedBox(height: 10),
-            const Text(
-              "Yenilikler:",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text(release['releaseNotes']),
-          ],
-        ),
+      title: const Text("Yeni Sürüm Mevcut! 🚀"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Sürüm: v${release['version']}"),
+          const SizedBox(height: 10),
+          const Text(
+            "Yenilikler:",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text(release['releaseNotes']),
+        ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text("Daha Sonra"),
+          child: const Text("Sonra"),
         ),
         ElevatedButton(
           onPressed: () {
             Navigator.pop(context);
             downloadAndInstallApk(release['downloadUrl']);
           },
-          child: const Text("Şimdi Güncelle"),
+          child: const Text("Güncelle"),
         ),
       ],
     ),
@@ -259,46 +259,18 @@ void showUpdateDialog(Map<String, dynamic> release) {
 }
 
 Future<void> downloadAndInstallApk(String url) async {
-  final context = navigatorKey.currentContext;
-  if (context == null) return;
-
-  // Yükleme göstergesi
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => const PopScope(
-      canPop: false,
-      child: AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 20),
-            Text("Dosya indiriliyor, lütfen bekleyin..."),
-          ],
-        ),
-      ),
-    ),
-  );
-
+  final Uri uri = Uri.parse(url);
   try {
-    final response = await http.get(Uri.parse(url));
-    final directory =
-        await getExternalStorageDirectory(); // Android için daha güvenli
-    final filePath = "${directory!.path}/update.apk";
-    final file = File(filePath);
-    await file.writeAsBytes(response.bodyBytes);
-
-    Navigator.pop(context); // Loading'i kapat
-
-    final result = await OpenFile.open(filePath);
-    if (result.type != ResultType.done) {
-      throw result.message;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      throw 'Link açılamadı';
     }
   } catch (e) {
-    Navigator.pop(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("Hata: $e")));
+    if (navigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(
+        navigatorKey.currentContext!,
+      ).showSnackBar(SnackBar(content: Text("Hata: $e")));
+    }
   }
 }
