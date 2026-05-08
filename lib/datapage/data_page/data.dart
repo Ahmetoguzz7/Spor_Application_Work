@@ -1,39 +1,1232 @@
-class Student {
-  final String studentId;
-  final String userId;
-  final int age;
-  final String parentId;
-  final String branchId;
-  final String sportId;
-  final String enrollmentDate;
+/*
+// ==========================================
+// USER MODEL
+// ==========================================
+class Users {
+  final String app;
+  final String branches_id;
+  final String first_name;
+  final String last_name;
+  final String email;
+  final String phone;
+  final String password_hash;
+  final String role;
+  final String profile_photo_url;
+  final String amount;
+  final String b_date;
+  final String created_at;
+  final String last_login;
+  final String is_active;
 
-  Student({
-    required this.studentId, required this.userId, required this.age,
-    required this.parentId, required this.branchId, required this.sportId,
-    required this.enrollmentDate,
+  Users({
+    required this.app,
+    required this.branches_id,
+    required this.first_name,
+    required this.last_name,
+    required this.email,
+    required this.phone,
+    required this.password_hash,
+    required this.role,
+    required this.profile_photo_url,
+    required this.amount,
+    required this.b_date,
+    required this.created_at,
+    required this.last_login,
+    required this.is_active,
   });
 
-  // JSON'dan nesneye (Okuma için)
-  factory Student.fromJson(Map<String, dynamic> json) {
-    return Student(
-      studentId: json['student_id'].toString(),
-      userId: json['user_id'].toString(),
-      age: int.tryParse(json['age'].toString()) ?? 0,
-      parentId: json['parent_id'].toString(),
-      branchId: json['branch_id'].toString(),
-      sportId: json['sport_id'].toString(),
-      enrollmentDate: json['enrollment_date'].toString(),
+  factory Users.fromJson(Map<String, dynamic> json) {
+    String getString(String key, {String defaultValue = ''}) {
+      final value = json[key];
+      if (value == null) return defaultValue;
+      return value.toString();
+    }
+
+    return Users(
+      app: getString('app'),
+      branches_id: getString('branches_id'),
+      first_name: getString('first_name'),
+      last_name: getString('last_name'),
+      email: getString('email'),
+      phone: getString('phone'),
+      password_hash: getString('password_hash'),
+      role: getString('role'),
+      profile_photo_url: getString('profile_photo_url'),
+      amount: getString('amount'),
+      b_date: getString('b_date'),
+      created_at: getString('created_at'),
+      last_login: getString('last_login'),
+      is_active: getString('is_active'),
     );
   }
 
-  // Nesneden JSON'a (Sheets'e göndermek için)
   Map<String, dynamic> toJson() => {
-    'student_id': studentId,
-    'user_id': userId,
-    'age': age,
-    'parent_id': parentId,
-    'branch_id': branchId,
-    'sport_id': sportId,
-    'enrollment_date': enrollmentDate,
+    'app': app,
+    'branches_id': branches_id,
+    'first_name': first_name,
+    'last_name': last_name,
+    'email': email,
+    'phone': phone,
+    'password_hash': password_hash,
+    'role': role,
+    'profile_photo_url': profile_photo_url,
+    'amount': amount,
+    'b_date': b_date,
+    'created_at': created_at,
+    'last_login': last_login,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// BRANCHES MODEL
+// ==========================================
+class Branches {
+  final String branches_id;
+  final String name;
+  final String address;
+  final String phone;
+  final String email;
+  final String is_active;
+  final String created_at;
+
+  Branches({
+    required this.branches_id,
+    required this.name,
+    required this.address,
+    required this.phone,
+    required this.email,
+    required this.is_active,
+    required this.created_at,
+  });
+
+  factory Branches.fromJson(Map<String, dynamic> json) {
+    return Branches(
+      branches_id: json['branches_id']?.toString() ?? '',
+      name: json['branches_name']?.toString() ?? 'İsimsiz Şube',
+      address: json['address']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      is_active: json['is_active']?.toString() ?? 'FALSE',
+      created_at: json['created_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'branches_id': branches_id,
+    'branches_name': name,
+    'address': address,
+    'phone': phone,
+    'email': email,
+    'is_active': is_active,
+    'created_at': created_at,
+  };
+}
+
+// ==========================================
+// SPORTS MODEL
+// ==========================================
+class Sports {
+  final String sports_id;
+  final String name;
+  final String description;
+
+  Sports({
+    required this.sports_id,
+    required this.name,
+    required this.description,
+  });
+
+  factory Sports.fromJson(Map<String, dynamic> json) {
+    return Sports(
+      sports_id: json['sports_id']?.toString() ?? '',
+      name: json['spor_name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'sports_id': sports_id,
+    'spor_name': name,
+    'description': description,
+  };
+}
+
+/*
+// ==========================================
+// COACH MODEL
+// ==========================================
+class Coach {
+  final String coach_id;
+  final String user_id;
+  final String branches_id;
+  final String sports_id;
+  final String bio;
+  final String certificate_info;
+  final String monthly_salary;
+  final String hired_at;
+
+  Coach({
+    required this.coach_id,
+    required this.user_id,
+    required this.branches_id,
+    required this.sports_id,
+    required this.bio,
+    required this.certificate_info,
+    required this.monthly_salary,
+    required this.hired_at,
+  });
+  /*
+  factory Coach.fromJson(Map<String, dynamic> json) {
+    print("Coach.fromJson - Gelen JSON: $json");
+
+    // 🔥 'coach_id' anahtarını doğru al
+    final coach_id = json['coach_id']?.toString() ?? '';
+    final user_id = json['user_id']?.toString() ?? '';
+
+    print("  -> coach_id: '$coach_id'");
+    print("  -> user_id: '$user_id'");
+
+    return Coach(
+      coach_id: coach_id,
+      user_id: user_id,
+      branches_id: json['branches_id']?.toString() ?? '',
+      sports_id: json['sports_id']?.toString() ?? '',
+      bio: json['bio']?.toString() ?? '',
+      certificate_info: json['certificate_info']?.toString() ?? '',
+      monthly_salary: json['monthly_salary']?.toString() ?? '0',
+      hired_at: json['hired_at']?.toString() ?? '',
+    );
+  }
+*/
+  factory Coach.fromJson(Map<String, dynamic> json) {
+    print("Coach.fromJson - Gelen JSON: $json");
+
+    // 🔥 'coaches_id' veya 'coach_id' dene
+    final coachId = json['coach_id'].toString();
+    final userId = json['user_id']?.toString() ?? '';
+
+    print("  -> coach_id: '$coachId'");
+    print("  -> user_id: '$userId'");
+
+    return Coach(
+      coach_id: coachId,
+      user_id: userId,
+      branches_id: json['branches_id']?.toString() ?? '',
+      sports_id: json['sports_id']?.toString() ?? '',
+      bio: json['bio']?.toString() ?? '',
+      certificate_info: json['certificate_info']?.toString() ?? '',
+      monthly_salary: json['monthly_salary']?.toString() ?? '0',
+      hired_at: json['hired_at']?.toString() ?? '',
+    );
+  }
+  Map<String, dynamic> toJson() => {
+    'coach_id': coach_id,
+    'user_id': user_id,
+    'branches_id': branches_id,
+    'sports_id': sports_id,
+    'bio': bio,
+    'certificate_info': certificate_info,
+    'monthly_salary': monthly_salary,
+    'hired_at': hired_at,
+  };
+}
+*/
+class Coach {
+  final String coach_id;
+  final String user_id;
+  final String branches_id;
+  final String sports_id;
+  final String bio;
+  final String certificate_info;
+  final String monthly_salary;
+  final String hired_at;
+
+  Coach({
+    required this.coach_id,
+    required this.user_id,
+    required this.branches_id,
+    required this.sports_id,
+    required this.bio,
+    required this.certificate_info,
+    required this.monthly_salary,
+    required this.hired_at,
+  });
+
+  // 🔥 DÜZELTİLMİŞ fromJson - BOŞLUKLARI TEMİZLE
+  factory Coach.fromJson(Map<String, dynamic> json) {
+    // Key'leri temizle
+    final Map<String, dynamic> clean = {};
+    json.forEach((k, v) {
+      clean[k.toString().trim()] = v;
+    });
+
+    print("🔧 Coach.fromJson - coach_id: '${clean['coach_id']}'");
+
+    return Coach(
+      coach_id: clean['coach_id']?.toString() ?? '',
+      user_id: clean['user_id']?.toString() ?? '',
+      branches_id: clean['branches_id']?.toString() ?? '',
+      sports_id: clean['sports_id']?.toString() ?? '',
+      bio: clean['bio']?.toString() ?? '',
+      certificate_info: clean['certificate_info']?.toString() ?? '',
+      monthly_salary: clean['monthly_salary']?.toString() ?? '',
+      hired_at: clean['hired_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'coach_id': coach_id,
+      'user_id': user_id,
+      'branches_id': branches_id,
+      'sports_id': sports_id,
+      'bio': bio,
+      'certificate_info': certificate_info,
+      'monthly_salary': monthly_salary,
+      'hired_at': hired_at,
+    };
+  }
+}
+
+// ==========================================
+// GROUP MODEL
+// ==========================================
+class Group {
+  final String groups_id;
+  final String branches_id;
+  final String coach_id;
+  final String sports_id;
+  final String name;
+  final String schedule;
+  final String capacity;
+  final String monthly_fee;
+  final String is_active;
+
+  Group({
+    required this.groups_id,
+    required this.branches_id,
+    required this.coach_id,
+    required this.sports_id,
+    required this.name,
+    required this.schedule,
+    required this.capacity,
+    required this.monthly_fee,
+    required this.is_active,
+  });
+  /*
+  factory Group.fromJson(Map<String, dynamic> json) {
+    return Group(
+      groups_id: json['groups_id']?.toString() ?? '',
+      branches_id: json['branches_id']?.toString() ?? '',
+      coach_id: json['coach_id']?.toString() ?? '',
+      sports_id: json['sports_id']?.toString() ?? '',
+      name: json['groups_name']?.toString() ?? 'İsimsiz Grup',
+      schedule: json['schedule']?.toString() ?? '',
+      capacity: json['capacity']?.toString() ?? '0',
+      monthly_fee: json['monthly_fee']?.toString() ?? '0',
+      is_active: json['is_active']?.toString() ?? 'FALSE',
+    );
+  }
+*/
+  factory Group.fromJson(Map<String, dynamic> json) {
+    // 🔥 'coaches_id' geliyor, 'coach_id' değil!
+    final coachId =
+        json['coach_id']?.toString() ?? json['coach_id']?.toString() ?? '';
+
+    print("Group.fromJson - coach_id değeri: '$coachId'"); // Debug için
+
+    return Group(
+      groups_id: json['groups_id']?.toString() ?? '',
+      branches_id: json['branches_id']?.toString() ?? '',
+      coach_id: coachId, // ✅ DÜZELTİLDİ
+      sports_id: json['sports_id']?.toString() ?? '',
+      name:
+          json['name']?.toString() ??
+          json['groups_name']?.toString() ??
+          'İsimsiz Grup',
+      schedule: json['schedule']?.toString() ?? '',
+      capacity: json['capacity']?.toString() ?? '0',
+      monthly_fee: json['monthly_fee']?.toString() ?? '0',
+      is_active: json['is_active']?.toString() ?? 'FALSE',
+    );
+  }
+  Map<String, dynamic> toJson() => {
+    'groups_id': groups_id,
+    'branches_id': branches_id,
+    'coach_id': coach_id,
+    'sports_id': sports_id,
+    'groups_name': name,
+    'schedule': schedule,
+    'capacity': capacity,
+    'monthly_fee': monthly_fee,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// GROUP STUDENT MODEL
+// ==========================================
+class GroupStudent {
+  final String group_students_id;
+  final String groups_id;
+  final String student_id;
+  final String enrolled_at;
+  final String is_active;
+
+  GroupStudent({
+    required this.group_students_id,
+    required this.groups_id,
+    required this.student_id,
+    required this.enrolled_at,
+    required this.is_active,
+  });
+
+  factory GroupStudent.fromJson(Map<String, dynamic> json) {
+    return GroupStudent(
+      group_students_id: json['group_students_id']?.toString() ?? '',
+      groups_id: json['groups_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      enrolled_at:
+          json['enrolled_at']?.toString() ?? DateTime.now().toIso8601String(),
+      is_active: json['is_active']?.toString() ?? 'TRUE',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'group_students_id': group_students_id,
+    'groups_id': groups_id,
+    'student_id': student_id,
+    'enrolled_at': enrolled_at,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// ATTENDANCE MODEL
+// ==========================================
+class Attendance {
+  final String attendances_id;
+  final String groups_id;
+  final String student_id;
+  final String taken_by;
+  final String attendance_date;
+  final String status;
+  final String note;
+
+  Attendance({
+    required this.attendances_id,
+    required this.groups_id,
+    required this.student_id,
+    required this.taken_by,
+    required this.attendance_date,
+    required this.status,
+    required this.note,
+  });
+
+  factory Attendance.fromJson(Map<String, dynamic> json) {
+    return Attendance(
+      attendances_id: json['attendances_id']?.toString() ?? '',
+      groups_id: json['groups_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      taken_by: json['taken_by']?.toString() ?? '',
+      attendance_date: json['attendance_date']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'FALSE',
+      note: json['note']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'attendances_id': attendances_id,
+    'groups_id': groups_id,
+    'student_id': student_id,
+    'taken_by': taken_by,
+    'attendance_date': attendance_date,
+    'status': status,
+    'note': note,
+  };
+}
+
+/*
+// ==========================================
+// PAYMENT MODEL
+// ==========================================
+class Payment {
+  final String payments_id;
+  final String student_id;
+  final String groups_id;
+  final String recorded_by;
+  final String amount;
+  final String due_date;
+  final String paid_date;
+  final String status;
+  final String payment_method;
+  final String note;
+
+  Payment({
+    required this.payments_id,
+    required this.student_id,
+    required this.groups_id,
+    required this.recorded_by,
+    required this.amount,
+    required this.due_date,
+    required this.paid_date,
+    required this.status,
+    required this.payment_method,
+    required this.note,
+  });
+  factory Payment.fromJson(Map<String, dynamic> json) {
+    return Payment(
+      payments_id: json['payments_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      groups_id:
+          json['group_id']?.toString() ??
+          json['groups_id']?.toString() ??
+          '', // 🔥 DÜZELTİLDİ
+      recorded_by: json['recorded_by']?.toString() ?? '',
+      amount: json['amount']?.toString() ?? '0',
+      due_date: json['due_date']?.toString() ?? '',
+      paid_date: json['paid_date']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'pending',
+      payment_method: json['payment_method']?.toString() ?? '',
+      note: json['note']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'payments_id': payments_id,
+    'student_id': student_id,
+    'group_id': groups_id, // 🔥 DÜZELTİLDİ: groups_id yerine group_id
+    'recorded_by': recorded_by,
+    'amount': amount,
+    'due_date': due_date,
+    'paid_date': paid_date,
+    'status': status,
+    'payment_method': payment_method,
+    'note': note,
+  };
+}
+*/
+// ==========================================
+// PAYMENT MODEL (DÜZELTİLMİŞ)
+// ==========================================
+class Payment {
+  final String payments_id;
+  final String student_id;
+  final String groups_id;
+  final String recorded_by;
+  final String amount;
+  final String due_date;
+  final String paid_date;
+  final String status;
+  final String payment_method;
+  final String note;
+
+  Payment({
+    required this.payments_id,
+    required this.student_id,
+    required this.groups_id,
+    required this.recorded_by,
+    required this.amount,
+    required this.due_date,
+    required this.paid_date,
+    required this.status,
+    required this.payment_method,
+    required this.note,
+  });
+
+  factory Payment.fromJson(Map<String, dynamic> json) {
+    return Payment(
+      payments_id: json['payments_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      groups_id:
+          json['groups_id']?.toString() ?? json['groups_id']?.toString() ?? '',
+      recorded_by: json['recorded_by']?.toString() ?? '',
+      amount: json['amount']?.toString() ?? '0',
+      due_date: json['due_date']?.toString() ?? '',
+      paid_date: json['paid_date']?.toString() ?? '',
+      status: json['status']?.toString() == 'TRUE'
+          ? 'paid'
+          : json['status']?.toString() ?? 'pending',
+      payment_method: json['payment_method']?.toString() ?? '',
+      note: json['note']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'payments_id': payments_id,
+    'student_id': student_id,
+    'group_id': groups_id,
+    'recorded_by': recorded_by,
+    'amount': amount,
+    'due_date': due_date,
+    'paid_date': paid_date,
+    'status': status == 'paid' ? 'TRUE' : status,
+    'payment_method': payment_method,
+    'note': note,
+  };
+}
+
+// ==========================================
+// NOTIFICATIONS MODEL
+// ==========================================
+class Notifications {
+  final String notifications_id;
+  final String sender_id;
+  final String recipient_id;
+  final String title;
+  final String message;
+  final String type;
+  final String is_read;
+  final String sent_at;
+
+  Notifications({
+    required this.notifications_id,
+    required this.sender_id,
+    required this.recipient_id,
+    required this.title,
+    required this.message,
+    required this.type,
+    required this.is_read,
+    required this.sent_at,
+  });
+
+  factory Notifications.fromJson(Map<String, dynamic> json) {
+    return Notifications(
+      notifications_id: json['notifications_id']?.toString() ?? '',
+      sender_id: json['sender_id']?.toString() ?? '',
+      recipient_id: json['recipient_id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+      is_read: json['is_read']?.toString() ?? 'FALSE',
+      sent_at: json['sent_at']?.toString() ?? DateTime.now().toIso8601String(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'notifications_id': notifications_id,
+    'sender_id': sender_id,
+    'recipient_id': recipient_id,
+    'title': title,
+    'message': message,
+    'type': type,
+    'is_read': is_read,
+    'sent_at': sent_at,
+  };
+}
+
+// ==========================================
+// PARENT STUDENT MODEL
+// ==========================================
+class ParentStudent {
+  final String parent_student_id;
+  final String parent_id;
+  final String student_id;
+
+  ParentStudent({
+    required this.parent_student_id,
+    required this.parent_id,
+    required this.student_id,
+  });
+
+  factory ParentStudent.fromJson(Map<String, dynamic> json) {
+    return ParentStudent(
+      parent_student_id: json['parent_student_id']?.toString() ?? '',
+      parent_id: json['parent_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'parent_student_id': parent_student_id,
+    'parent_id': parent_id,
+    'student_id': student_id,
+  };
+}
+
+// ==========================================
+// STUDENT NOTE MODEL
+// ==========================================
+class StudentNote {
+  final String id;
+  final String student_id;
+  final String coach_id;
+  final String note;
+  final String created_at;
+
+  StudentNote({
+    required this.id,
+    required this.student_id,
+    required this.coach_id,
+    required this.note,
+    required this.created_at,
+  });
+
+  factory StudentNote.fromJson(Map<String, dynamic> json) {
+    return StudentNote(
+      id: json['id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      coach_id: json['coach_id']?.toString() ?? '',
+      note: json['note']?.toString() ?? '',
+      created_at:
+          json['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'student_id': student_id,
+    'coach_id': coach_id,
+    'note': note,
+    'created_at': created_at,
+  };
+}
+*/
+// ==========================================
+// USER MODEL
+// ==========================================
+class Users {
+  final String app;
+  final String branches_id;
+  final String first_name;
+  final String last_name;
+  final String email;
+  final String phone;
+  final String password_hash;
+  final String role;
+  final String profile_photo_url;
+  final String amount;
+  final String b_date;
+  final String created_at;
+  final String last_login;
+  final String is_active;
+
+  Users({
+    required this.app,
+    required this.branches_id,
+    required this.first_name,
+    required this.last_name,
+    required this.email,
+    required this.phone,
+    required this.password_hash,
+    required this.role,
+    required this.profile_photo_url,
+    required this.amount,
+    required this.b_date,
+    required this.created_at,
+    required this.last_login,
+    required this.is_active,
+  });
+
+  factory Users.fromJson(Map<String, dynamic> json) {
+    String getString(String key, {String defaultValue = ''}) {
+      final value = json[key];
+      if (value == null) return defaultValue;
+      return value.toString();
+    }
+
+    return Users(
+      app: getString('app'),
+      branches_id: getString('branches_id'),
+      first_name: getString('first_name'),
+      last_name: getString('last_name'),
+      email: getString('email'),
+      phone: getString('phone'),
+      password_hash: getString('password_hash'),
+      role: getString('role'),
+      profile_photo_url: getString('profile_photo_url'),
+      amount: getString('amount'),
+      b_date: getString('b_date'),
+      created_at: getString('created_at'),
+      last_login: getString('last_login'),
+      is_active: getString('is_active'),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'app': app,
+    'branches_id': branches_id,
+    'first_name': first_name,
+    'last_name': last_name,
+    'email': email,
+    'phone': phone,
+    'password_hash': password_hash,
+    'role': role,
+    'profile_photo_url': profile_photo_url,
+    'amount': amount,
+    'b_date': b_date,
+    'created_at': created_at,
+    'last_login': last_login,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// BRANCHES MODEL
+// ==========================================
+class Branches {
+  final String branches_id;
+  final String name;
+  final String address;
+  final String phone;
+  final String email;
+  final String is_active;
+  final String created_at;
+
+  Branches({
+    required this.branches_id,
+    required this.name,
+    required this.address,
+    required this.phone,
+    required this.email,
+    required this.is_active,
+    required this.created_at,
+  });
+
+  factory Branches.fromJson(Map<String, dynamic> json) {
+    return Branches(
+      branches_id: json['branches_id']?.toString() ?? '',
+      name: json['branches_name']?.toString() ?? 'İsimsiz Şube',
+      address: json['address']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      is_active: json['is_active']?.toString() ?? 'FALSE',
+      created_at: json['created_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'branches_id': branches_id,
+    'branches_name': name,
+    'address': address,
+    'phone': phone,
+    'email': email,
+    'is_active': is_active,
+    'created_at': created_at,
+  };
+}
+
+// ==========================================
+// SPORTS MODEL
+// ==========================================
+class Sports {
+  final String sports_id;
+  final String name;
+  final String description;
+
+  Sports({
+    required this.sports_id,
+    required this.name,
+    required this.description,
+  });
+
+  factory Sports.fromJson(Map<String, dynamic> json) {
+    return Sports(
+      sports_id: json['sports_id']?.toString() ?? '',
+      name: json['spor_name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'sports_id': sports_id,
+    'spor_name': name,
+    'description': description,
+  };
+}
+
+// ==========================================
+// COACH MODEL
+// ==========================================
+class Coach {
+  final String coach_id;
+  final String user_id;
+  final String branches_id;
+  final String sports_id;
+  final String bio;
+  final String certificate_info;
+  final String monthly_salary;
+  final String hired_at;
+
+  Coach({
+    required this.coach_id,
+    required this.user_id,
+    required this.branches_id,
+    required this.sports_id,
+    required this.bio,
+    required this.certificate_info,
+    required this.monthly_salary,
+    required this.hired_at,
+  });
+
+  factory Coach.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> clean = {};
+    json.forEach((k, v) {
+      clean[k.toString().trim()] = v;
+    });
+
+    return Coach(
+      coach_id: clean['coach_id']?.toString() ?? '',
+      user_id: clean['user_id']?.toString() ?? '',
+      branches_id: clean['branches_id']?.toString() ?? '',
+      sports_id: clean['sports_id']?.toString() ?? '',
+      bio: clean['bio']?.toString() ?? '',
+      certificate_info: clean['certificate_info']?.toString() ?? '',
+      monthly_salary: clean['monthly_salary']?.toString() ?? '0',
+      hired_at: clean['hired_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'coach_id': coach_id,
+    'user_id': user_id,
+    'branches_id': branches_id,
+    'sports_id': sports_id,
+    'bio': bio,
+    'certificate_info': certificate_info,
+    'monthly_salary': monthly_salary,
+    'hired_at': hired_at,
+  };
+}
+
+// ==========================================
+// GROUP MODEL (DÜZELTİLDİ)
+// ==========================================
+class Group {
+  final String groups_id;
+  final String branches_id;
+  final String coach_id;
+  final String sports_id;
+  final String name;
+  final String schedule;
+  final String capacity;
+  final String monthly_fee;
+  final String is_active;
+
+  Group({
+    required this.groups_id,
+    required this.branches_id,
+    required this.coach_id,
+    required this.sports_id,
+    required this.name,
+    required this.schedule,
+    required this.capacity,
+    required this.monthly_fee,
+    required this.is_active,
+  });
+
+  factory Group.fromJson(Map<String, dynamic> json) {
+    // 🔥 groups_name veya name'i al
+    String groupName = json['groups_name']?.toString() ?? '';
+    if (groupName.isEmpty) groupName = json['name']?.toString() ?? '';
+    if (groupName.isEmpty) groupName = 'İsimsiz Grup';
+
+    // 🔥 monthly_fee'i güvenli al
+    String monthlyFeeStr = '0';
+    final monthlyFeeRaw = json['monthly_fee'];
+    if (monthlyFeeRaw != null && monthlyFeeRaw.toString().isNotEmpty) {
+      monthlyFeeStr = monthlyFeeRaw.toString();
+    }
+
+    //print("📊 Group.fromJson: ${groupName} -> monthly_fee: '${monthlyFeeStr}'");
+
+    return Group(
+      groups_id: json['groups_id']?.toString() ?? '',
+      branches_id: json['branches_id']?.toString() ?? '',
+      coach_id: json['coach_id']?.toString() ?? '',
+      sports_id: json['sports_id']?.toString() ?? '',
+      name: groupName,
+      schedule: json['schedule']?.toString() ?? '',
+      capacity: json['capacity']?.toString() ?? '0',
+      monthly_fee: monthlyFeeStr,
+      is_active: json['is_active']?.toString() ?? 'FALSE',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'groups_id': groups_id,
+    'branches_id': branches_id,
+    'coach_id': coach_id,
+    'sports_id': sports_id,
+    'groups_name': name,
+    'schedule': schedule,
+    'capacity': capacity,
+    'monthly_fee': monthly_fee,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// GROUP STUDENT MODEL
+// ==========================================
+class GroupStudent {
+  final String group_students_id;
+  final String groups_id;
+  final String student_id;
+  final String enrolled_at;
+  final String is_active;
+
+  GroupStudent({
+    required this.group_students_id,
+    required this.groups_id,
+    required this.student_id,
+    required this.enrolled_at,
+    required this.is_active,
+  });
+
+  factory GroupStudent.fromJson(Map<String, dynamic> json) {
+    return GroupStudent(
+      group_students_id: json['group_students_id']?.toString() ?? '',
+      groups_id: json['groups_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      enrolled_at:
+          json['enrolled_at']?.toString() ?? DateTime.now().toIso8601String(),
+      is_active: json['is_active']?.toString() ?? 'TRUE',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'group_students_id': group_students_id,
+    'groups_id': groups_id,
+    'student_id': student_id,
+    'enrolled_at': enrolled_at,
+    'is_active': is_active,
+  };
+}
+
+// ==========================================
+// ATTENDANCE MODEL
+// ==========================================
+class Attendance {
+  final String attendances_id;
+  final String groups_id;
+  final String student_id;
+  final String taken_by;
+  final String attendance_date;
+  final String status;
+  final String note;
+
+  Attendance({
+    required this.attendances_id,
+    required this.groups_id,
+    required this.student_id,
+    required this.taken_by,
+    required this.attendance_date,
+    required this.status,
+    required this.note,
+  });
+
+  factory Attendance.fromJson(Map<String, dynamic> json) {
+    return Attendance(
+      attendances_id: json['attendances_id']?.toString() ?? '',
+      groups_id: json['groups_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      taken_by: json['taken_by']?.toString() ?? '',
+      attendance_date: json['attendance_date']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'FALSE',
+      note: json['note']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'attendances_id': attendances_id,
+    'groups_id': groups_id,
+    'student_id': student_id,
+    'taken_by': taken_by,
+    'attendance_date': attendance_date,
+    'status': status,
+    'note': note,
+  };
+}
+
+// ==========================================
+// PAYMENT MODEL (DÜZELTİLDİ)
+// ==========================================
+class Payment {
+  final String payments_id;
+  final String student_id;
+  final String groups_id;
+  final String recorded_by;
+  final String amount;
+  final String due_date;
+  final String paid_date;
+  final String status;
+  final String payment_method;
+  final String note;
+
+  Payment({
+    required this.payments_id,
+    required this.student_id,
+    required this.groups_id,
+    required this.recorded_by,
+    required this.amount,
+    required this.due_date,
+    required this.paid_date,
+    required this.status,
+    required this.payment_method,
+    required this.note,
+  });
+
+  factory Payment.fromJson(Map<String, dynamic> json) {
+    // 🔥 status dönüşümü: TRUE -> paid, FALSE/FALSE -> pending
+    String statusValue = json['status']?.toString() ?? 'pending';
+    if (statusValue.toUpperCase() == 'TRUE') {
+      statusValue = 'paid';
+    } else if (statusValue.toUpperCase() == 'FALSE') {
+      statusValue = 'pending';
+    }
+
+    // 🔥 groups_id: group_id veya groups_id
+    String groupsIdValue = json['groups_id']?.toString() ?? '';
+    if (groupsIdValue.isEmpty) {
+      groupsIdValue = json['group_id']?.toString() ?? '';
+    }
+
+    return Payment(
+      payments_id: json['payments_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      groups_id: groupsIdValue,
+      recorded_by: json['recorded_by']?.toString() ?? '',
+      amount: json['amount']?.toString() ?? '0',
+      due_date: json['due_date']?.toString() ?? '',
+      paid_date: json['paid_date']?.toString() ?? '',
+      status: statusValue,
+      payment_method: json['payment_method']?.toString() ?? '',
+      note: json['note']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'payments_id': payments_id,
+    'student_id': student_id,
+    'group_id': groups_id,
+    'recorded_by': recorded_by,
+    'amount': amount,
+    'due_date': due_date,
+    'paid_date': paid_date,
+    'status': status == 'paid' ? 'TRUE' : 'FALSE',
+    'payment_method': payment_method,
+    'note': note,
+  };
+}
+
+// ==========================================
+// NOTIFICATIONS MODEL
+// ==========================================
+class Notifications {
+  final String notifications_id;
+  final String sender_id;
+  final String recipient_id;
+  final String title;
+  final String message;
+  final String type;
+  final String is_read;
+  final String sent_at;
+  final String groups_id;
+
+  Notifications({
+    required this.notifications_id,
+    required this.sender_id,
+    required this.recipient_id,
+    required this.title,
+    required this.message,
+    required this.type,
+    required this.is_read,
+    required this.sent_at,
+    required this.groups_id,
+  });
+
+  factory Notifications.fromJson(Map<String, dynamic> json) {
+    return Notifications(
+      notifications_id: json['notifications_id']?.toString() ?? '',
+      sender_id: json['sender_id']?.toString() ?? '',
+      recipient_id: json['recipient_id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+      is_read: json['is_read']?.toString() ?? 'FALSE',
+      sent_at: json['sent_at']?.toString() ?? DateTime.now().toIso8601String(),
+      groups_id: json['groups_id']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'notifications_id': notifications_id,
+    'sender_id': sender_id,
+    'recipient_id': recipient_id,
+    'title': title,
+    'message': message,
+    'type': type,
+    'is_read': is_read,
+    'sent_at': sent_at,
+    'groups_id': groups_id,
+  };
+}
+
+// ==========================================
+// PARENT STUDENT MODEL
+// ==========================================
+class ParentStudent {
+  final String parent_student_id;
+  final String parent_id;
+  final String student_id;
+
+  ParentStudent({
+    required this.parent_student_id,
+    required this.parent_id,
+    required this.student_id,
+  });
+
+  factory ParentStudent.fromJson(Map<String, dynamic> json) {
+    return ParentStudent(
+      parent_student_id: json['parent_student_id']?.toString() ?? '',
+      parent_id: json['parent_id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'parent_student_id': parent_student_id,
+    'parent_id': parent_id,
+    'student_id': student_id,
+  };
+}
+
+// ==========================================
+// STUDENT NOTE MODEL
+// ==========================================
+class StudentNote {
+  final String id;
+  final String student_id;
+  final String coach_id;
+  final String note;
+  final String created_at;
+
+  StudentNote({
+    required this.id,
+    required this.student_id,
+    required this.coach_id,
+    required this.note,
+    required this.created_at,
+  });
+
+  factory StudentNote.fromJson(Map<String, dynamic> json) {
+    return StudentNote(
+      id: json['id']?.toString() ?? '',
+      student_id: json['student_id']?.toString() ?? '',
+      coach_id: json['coach_id']?.toString() ?? '',
+      note: json['note']?.toString() ?? '',
+      created_at:
+          json['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'student_id': student_id,
+    'coach_id': coach_id,
+    'note': note,
+    'created_at': created_at,
   };
 }

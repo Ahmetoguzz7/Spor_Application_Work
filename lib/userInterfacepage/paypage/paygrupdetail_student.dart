@@ -1,13 +1,22 @@
+/*
 import 'package:flutter/material.dart';
-import 'package:my_app/userInterfacepage/paypage/ogrencimodel.dart';
-import 'package:my_app/userInterfacepage/paypage/paypage_detail_form.dart';
-import 'package:my_app/userInterfacepage/paypage/paypage_detail_form_model.dart';
-
+import 'package:my_app/datapage/data_page/data.dart';
 
 class AidatTakipSayfasi extends StatefulWidget {
+  final Group? seciliGrup; // group nesnesi (null gelebilir öğrenci panelinde)
+  final List<Users> tumKullanicilar;
+  final List<Payment> tumOdemeler;
   final String grupAdi;
+  final Users user; // Giriş yapan kullanıcı
 
-  AidatTakipSayfasi({required this.grupAdi});
+  const AidatTakipSayfasi({
+    super.key,
+    this.seciliGrup,
+    required this.tumKullanicilar,
+    required this.tumOdemeler,
+    required this.grupAdi,
+    required this.user,
+  });
 
   @override
   _AidatTakipSayfasiState createState() => _AidatTakipSayfasiState();
@@ -16,72 +25,204 @@ class AidatTakipSayfasi extends StatefulWidget {
 class _AidatTakipSayfasiState extends State<AidatTakipSayfasi> {
   @override
   Widget build(BuildContext context) {
-    // Sadece bu gruba ait öğrencileri süzüyoruz
-    final grupOgrencileri = tumOgrenciler
-        .where((o) => o.grup == widget.grupAdi)
-        .toList();
-
-    // Kaç kişi ödeme yapmış sayısını hesaplayalım
-    int odenenSayisi = grupOgrencileri.where((o) => o.aidatOdediMi).length;
+    // 1. Filtreleme: Eğer seciliGrup yoksa (öğrenci paneli), sadece giriş yapan öğrenciyi göster.
+    // Varsa (koç paneli), o grubun ve şubenin öğrencilerini göster.
+    final gosterilecekOgrenciler = widget.tumKullanicilar.where((u) {
+      if (widget.seciliGrup == null) {
+        return u.appId == widget.user.appId; // Sadece kendini gör
+      }
+      return u.role == "student" && u.branchId == widget.seciliGrup!.branchId;
+    }).toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text("${widget.grupAdi} Aidat Takibi"),
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(30),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Text(
-              "Toplam Ödeme: $odenenSayisi / ${grupOgrencileri.length}",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      appBar: AppBar(title: Text(widget.grupAdi), centerTitle: true),
+      body: gosterilecekOgrenciler.isEmpty
+          ? const Center(child: Text("Gösterilecek veri bulunamadı."))
+          : ListView.builder(
+              itemCount: gosterilecekOgrenciler.length,
+              itemBuilder: (context, index) {
+                final ogrenci = gosterilecekOgrenciler[index];
+
+                // Ödeme kontrolü: payment modelindeki status'a göre
+                bool odediMi = widget.tumOdemeler.any(
+                  (p) =>
+                      p.studentId == ogrenci.appId &&
+                      (widget.seciliGrup == null ||
+                          p.groupId == widget.seciliGrup!.groupId) &&
+                      p.status.toLowerCase() == "paid",
+                );
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: odediMi
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
+                      child: Icon(
+                        odediMi ? Icons.check : Icons.priority_high,
+                        color: odediMi ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    title: Text("${ogrenci.first_name} ${ogrenci.last_name}"),
+                    subtitle: Text(odediMi ? "Aidat Ödendi" : "Ödeme Bekliyor"),
+                    trailing: Text(
+                      odediMi ? "TAMAM" : "EKSİK",
+                      style: TextStyle(
+                        color: odediMi ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onTap: () {
+                      if (!odediMi) {
+                        _odemeIsleminiBaslat(ogrenci);
+                      }
+                    },
+                  ),
+                );
+              },
             ),
-          ),
+    );
+  }
+
+  void _odemeIsleminiBaslat(Users ogrenci) {
+    // Burada ödeme detaylarını göstermek için bir dialog veya yeni sayfa açabilirsin
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Ödeme Bilgisi"),
+        content: Text(
+          "${ogrenci.first_name} için ödeme kaydı oluşturulsun mu?",
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Vazgeç"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Sheets'e kayıt atma mantığı buraya
+              Navigator.pop(context);
+            },
+            child: const Text("Onayla"),
+          ),
+        ],
       ),
-      body: ListView.builder(
-        itemCount: grupOgrencileri.length,
-        itemBuilder: (context, index) {
-          final ogrenci = grupOgrencileri[index];
-          
-          return CheckboxListTile(
-            title: Text(
-              ogrenci.ad,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: ogrenci.aidatOdediMi ? Colors.green : Colors.black,
-              ),
-            ),
-            subtitle: Text(ogrenci.aidatOdediMi ? "Aidat Ödendi" : "Beklemede"),
-            value: ogrenci.aidatOdediMi,
-            activeColor: Colors.green,
-            checkColor: Colors.white,
-            secondary: Icon(
-              ogrenci.aidatOdediMi ? Icons.monetization_on : Icons.money_off,
-              color: ogrenci.aidatOdediMi ? Colors.green : Colors.grey,
-            ),
-           onChanged: (bool? deger) {
+    );
+  }
+}
+*/
+import 'package:flutter/material.dart';
+import 'package:my_app/datapage/data_page/data.dart';
 
- if (deger == true) {
-  // 1. Önce ekrandaki durumu güncelle (Tik atılsın)
-  setState(() {
-    ogrenci.aidatOdediMi = true;
+class AidatTakipSayfasi extends StatefulWidget {
+  final Group? seciliGrup;
+  final List<Users> tumKullanicilar;
+  final List<Payment> tumOdemeler;
+  final String grupAdi;
+  final Users user;
+
+  const AidatTakipSayfasi({
+    super.key,
+    this.seciliGrup,
+    required this.tumKullanicilar,
+    required this.tumOdemeler,
+    required this.grupAdi,
+    required this.user,
   });
 
-  // 2. Formu aç (Gerekliyse)
-  odemeFormuAc(context, kocOgrenci(ad: ogrenci.ad, grup: ogrenci.grup, email: "ahmetoguzmertoglu@beyes.com.tr"));
-
-  // 3. PDF oluştur ve Mail taslağını aç
-  // Not: Buradaki parametreleri formdan gelen gerçek verilerle doldurmayı unutma!
- 
-
-} else {
-  setState(() {
-    ogrenci.aidatOdediMi = false;
-  });
+  @override
+  _AidatTakipSayfasiState createState() => _AidatTakipSayfasiState();
 }
-}
-          );
-        },
+
+class _AidatTakipSayfasiState extends State<AidatTakipSayfasi> {
+  @override
+  Widget build(BuildContext context) {
+    final gosterilecekOgrenciler = widget.tumKullanicilar.where((u) {
+      if (widget.seciliGrup == null) {
+        return u.app == widget.user.app;
+      }
+      return u.role == "student" &&
+          u.branches_id == widget.seciliGrup!.branches_id;
+    }).toList();
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.grupAdi), centerTitle: true),
+      body: gosterilecekOgrenciler.isEmpty
+          ? const Center(child: Text("Gösterilecek veri bulunamadı."))
+          : ListView.builder(
+              itemCount: gosterilecekOgrenciler.length,
+              itemBuilder: (context, index) {
+                final ogrenci = gosterilecekOgrenciler[index];
+
+                bool odediMi = widget.tumOdemeler.any(
+                  (p) =>
+                      p.student_id == ogrenci.app &&
+                      (widget.seciliGrup == null ||
+                          p.groups_id == widget.seciliGrup!.groups_id) &&
+                      p.status.toLowerCase() == "paid",
+                );
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: odediMi
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
+                      child: Icon(
+                        odediMi ? Icons.check : Icons.priority_high,
+                        color: odediMi ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    title: Text("${ogrenci.first_name} ${ogrenci.last_name}"),
+                    subtitle: Text(odediMi ? "Aidat Ödendi" : "Ödeme Bekliyor"),
+                    trailing: Text(
+                      odediMi ? "TAMAM" : "EKSİK",
+                      style: TextStyle(
+                        color: odediMi ? Colors.green : Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onTap: () {
+                      if (!odediMi) {
+                        _odemeIsleminiBaslat(ogrenci);
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  void _odemeIsleminiBaslat(Users ogrenci) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Ödeme Bilgisi"),
+        content: Text(
+          "${ogrenci.first_name} için ödeme kaydı oluşturulsun mu?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Vazgeç"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // TODO: Sheets'e kayıt atma mantığı buraya eklenecek
+              Navigator.pop(context);
+            },
+            child: const Text("Onayla"),
+          ),
+        ],
       ),
     );
   }

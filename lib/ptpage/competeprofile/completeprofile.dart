@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/datapage/fetch_data_page.dart';
-import 'package:my_app/datapage/data_page/data.dart';
+import 'package:my_app/datapage/data_page/data.dart'; // Users modelinin yolu
 import 'package:my_app/ptpage/student_interface.dart';
-import 'package:my_app/userInterfacepage/userinterface.dart';
 
 class CompleteProfilePage extends StatefulWidget {
   final Map<String, dynamic> userData;
@@ -16,32 +15,30 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
   final _formKey = GlobalKey<FormState>();
   final branchController = TextEditingController();
   final sportController = TextEditingController();
-  final parentController = TextEditingController(); // Yaş yerine Veli adı
+  final phoneController =
+      TextEditingController(); // Kayıtta eksikse burada tamamlayabilir
   bool isLoading = false;
 
- void _handleCompleteProfile() async {
+  void _handleCompleteProfile() async {
     if (_formKey.currentState!.validate()) {
       setState(() => isLoading = true);
 
-      // 1. Paketi hazırla
+      // 1. Sheets'e gönderilecek paket (Modeldeki keylerle aynı olmalı)
       Map<String, dynamic> updateData = {
-        "user_id": widget.userData["user_id"] ?? widget.userData["student_id"],
+        "email": widget.userData["email"], // Güncelleme için anahtar
         "branch_id": branchController.text.trim(),
-        "sport_id": sportController.text.trim(),
-        "parent_id": parentController.text.trim(),
-        "enrollment_date": DateTime.now().toString().substring(0, 10),
+        "role": widget.userData["role"] ?? "student",
+        "is_active": "1", // Profil tamamlandığına göre artık aktif
+        "last_login": DateTime.now().toString().substring(0, 19),
       };
 
-      // 2. Veriyi arka planda gönder (Await etsek de sonucu sorgulamıyoruz)
-      // Bu sayede bağlantı kopsa bile kullanıcıyı bekletip hata göstermeyeceğiz
       try {
-        await GoogleSheetService.updateProfile(updateData);
+        // Servis üzerinden Sheets'i güncelle
+        await GoogleSheetService.updateProfile(widget.userData["email"]);
       } catch (e) {
-        print("Arka planda bir hata oluştu ama devam ediliyor: $e");
+        print("Profil güncelleme hatası: $e");
       }
 
-      // 3. BAŞARIYLA GÜNCELLENDİ MANTIĞI
-      // Beklemeye gerek kalmadan direkt başarı mesajı ve yönlendirme
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -51,16 +48,21 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
           ),
         );
 
-        // Model için verileri birleştir
-        final finalData = {...widget.userData, ...updateData};
-        final student = Student.fromJson(finalData);
+        // 2. Model için verileri birleştir
+        // Mevcut verilerin üzerine yeni gelenleri yazıyoruz
+        final Map<String, dynamic> finalMap = Map.from(widget.userData);
+        finalMap.addAll(updateData);
 
-        // 1 saniye sonra ana sayfaya fırlat
+        final loggedUser = Users.fromJson(finalMap);
+
+        // 3. Yönlendirme
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
             Navigator.pushReplacement(
-              context, 
-              MaterialPageRoute(builder: (_) => UserInterface(student: student))
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserInterface(user: loggedUser),
+              ),
             );
           }
         });
@@ -80,18 +82,47 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
             children: [
               const Icon(Icons.badge, size: 80, color: Colors.blueAccent),
               const SizedBox(height: 20),
-              const Text("Sporcu Bilgilerini Güncelle", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text(
+                "Hoş geldin ${widget.userData['first_name'] ?? ''}!",
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Text("Devam etmek için lütfen eksik bilgileri doldur."),
               const SizedBox(height: 30),
-              _buildInput(branchController, "Şube Seçiniz", Icons.location_on),
-              _buildInput(sportController, "Spor Branşı", Icons.sports_soccer),
-              _buildInput(parentController, "Veli Adı Soyadı", Icons.family_restroom), // İŞTE VELİ ALANI
+
+              _buildInput(
+                branchController,
+                "Şube Kodu / Adı",
+                Icons.location_on,
+              ),
+              _buildInput(
+                sportController,
+                "Spor Branşı (Örn: Basketbol)",
+                Icons.sports_soccer,
+              ),
+
               const SizedBox(height: 40),
+
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                  ),
                   onPressed: isLoading ? null : _handleCompleteProfile,
-                  child: isLoading ? const CircularProgressIndicator() : const Text("KAYDET VE GİRİŞ YAP"),
+                  child: isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          "KAYDET VE GİRİŞ YAP",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                 ),
               ),
             ],
@@ -101,7 +132,11 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
     );
   }
 
-  Widget _buildInput(TextEditingController controller, String label, IconData icon) {
+  Widget _buildInput(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: TextFormField(
@@ -110,9 +145,18 @@ class _CompleteProfilePageState extends State<CompleteProfilePage> {
           labelText: label,
           prefixIcon: Icon(icon),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+          filled: true,
+          fillColor: Colors.grey[50],
         ),
-        validator: (v) => v!.isEmpty ? "Boş bırakılamaz" : null,
+        validator: (v) => v!.isEmpty ? "Lütfen bu alanı doldurun" : null,
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    branchController.dispose();
+    sportController.dispose();
+    super.dispose();
   }
 }

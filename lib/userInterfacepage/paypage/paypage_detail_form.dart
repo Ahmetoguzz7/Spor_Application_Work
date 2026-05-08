@@ -1,172 +1,212 @@
+/*
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:my_app/userInterfacepage/paypage/paypage_detail_form_model.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter_email_sender/flutter_email_sender.dart';
+import 'package:my_app/datapage/data_page/data.dart'; // Modellerin yolu
+import 'package:my_app/datapage/fetch_data_page.dart'; // Servislerin yolu
 
-
-
-Future<void> dekontOlusturVeGonder(kocOgrenci ogrenci, {required String ogrenciAdi}) async {
-
-  final pdf = pw.Document();
-
-  pdf.addPage(
-    pw.Page(
-      build: (context) => pw.Padding(
-        padding: const pw.EdgeInsets.all(30),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-
-            pw.Center(
-              child: pw.Text(
-                "OGRENCI AIDAT ODEME DEKONTU",
-                style: pw.TextStyle(
-                  fontSize: 22,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-
-            pw.SizedBox(height: 30),
-
-            pw.Text("Ogrenci: ${ogrenci.ad}"),
-            pw.Text("Grup: ${ogrenci.grup}"),
-            pw.Text("Odeme Tarihi: ${ogrenci.odemeTarihi?.toString().split(' ')[0] ?? ""}"),
-            pw.Text("Odeyen Kisi: ${ogrenci.kimOdedi ?? ""}"),
-            pw.Text("Odemeyi Alan: ${ogrenci.odemeAlan ?? ""}"),
-            pw.Text("Alinan Ucret: ${ogrenci.odemeTutari ?? ""} TL"),
-
-            pw.SizedBox(height: 40),
-
-            pw.Text(
-              "Islem Tarihi: ${DateTime.now().toString().split('.')[0]}",
-              style: pw.TextStyle(fontSize: 12),
-            ),
-
-          ],
-        ),
-      ),
-    ),
+void odemeFormuAc(
+  BuildContext context,
+  Users student,
+  Group? seciliGrup,
+  Users currentUser,
+) {
+  // Varsayılan tutar olarak grubun aylık ücretini getiriyoruz
+  final TextEditingController miktarController = TextEditingController(
+    text: seciliGrup?.free_sports_monthly ?? "",
   );
+  final TextEditingController notController = TextEditingController();
 
-  final dir = await getTemporaryDirectory();
-  final file = File("${dir.path}/dekont.pdf");
-
-  await file.writeAsBytes(await pdf.save());
-
-  final Email email = Email(
-    body: "Odeme dekontunuz ekte gonderilmistir.",
-    subject: "Aidat Odeme Dekontu",
-    recipients: [ogrenci.email],
-    attachmentPaths: [file.path],
-  );
-
-  await FlutterEmailSender.send(email);
-}
-
-void odemeFormuAc(BuildContext context, kocOgrenci ogrenci) async {
-
-  DateTime? secilenTarih;
-  String? kimOdedi;
-  String? odemeAlan;
-  String? alinanUcret;
-
-  await showDialog(
+  showDialog(
     context: context,
     builder: (context) {
-
       return AlertDialog(
-        title: const Text("Ödeme Bilgisi"),
+        title: Text("${student.first_name} ${student.last_name}"),
 
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-
-            ElevatedButton(
-              child: const Text("Ödeme Tarihi Seç"),
-              onPressed: () async {
-
-                secilenTarih = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2023),
-                  lastDate: DateTime(2030),
-                );
-
-              },
+            Text(
+              "Branş: ${seciliGrup?.sportId ?? 'Genel'}",
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-
-            const SizedBox(height: 10),
-
-            DropdownButtonFormField<String>(
-              hint: const Text("Kim Ödedi"),
-              items: const [
-                DropdownMenuItem(value: "Anne", child: Text("Anne")),
-                DropdownMenuItem(value: "Baba", child: Text("Baba")),
-                DropdownMenuItem(value: "Kendisi", child: Text("Kendisi")),
-              ],
-              onChanged: (v) {
-                kimOdedi = v;
-              },
-            ),
-
-            const SizedBox(height: 10),
-
+            const SizedBox(height: 15),
             TextField(
+              controller: miktarController,
               decoration: const InputDecoration(
-                labelText: "Ödemeyi Kim Aldı",
-              ),
-              onChanged: (v) {
-                odemeAlan = v;
-              },
-            ),
-
-            const SizedBox(height: 10),
-
-            TextField(
-              decoration: const InputDecoration(
-                labelText: "Alınan Ücret (TL)",
+                labelText: "Tutar (TL)",
+                border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
-              onChanged: (v) {
-                alinanUcret = v;
-              },
             ),
-
+            const SizedBox(height: 10),
+            TextField(
+              controller: notController,
+              decoration: const InputDecoration(
+                labelText: "Ödeme Notu / Dekont No",
+                border: OutlineInputBorder(),
+              ),
+            ),
           ],
         ),
-
         actions: [
-
           TextButton(
-            child: const Text("İptal"),
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Vazgeç"),
           ),
-
           ElevatedButton(
-            child: const Text("Kaydet"),
             onPressed: () async {
+              if (miktarController.text.isEmpty) return;
 
-              ogrenci.aidatOdediMi = true;
-              ogrenci.odemeTarihi = secilenTarih;
-              ogrenci.kimOdedi = kimOdedi;
-              ogrenci.odemeAlan = odemeAlan;
-              ogrenci.odemeTutari = alinanUcret;
+              // --- YENİ PAYMENT MODELİNE GÖRE ATAMALAR ---
+              final yeniOdeme = Payment(
+                paymentId:
+                    "PAY-${DateTime.now().millisecondsSinceEpoch}", // Benzersiz ID
+                studentId: student.appId, // Öğrenci ID
+                groupId: seciliGrup?.groupId ?? "", // Grup ID
+                // Şube ID (Users'tan geliyor)
+                // Sports ID (Group'tan geliyor)
+                // Ödemeyi alan Hoca/Muhasebe ID
+                amount: miktarController.text,
+                due_date: DateTime.now().add(
+                  const Duration(days: 30),
+                ), // Vade (30 gün sonra)
+                paid_date: DateTime.now(), // Şu anki ödeme tarihi
+                payment_method: "Nakit", // İsteğe göre seçimli yapılabilir
+                payment_note: notController.text,
+                status: "Paid",
 
-              Navigator.pop(context);
+                recored_by: currentUser.appId,
+                // Direkt ödendi olarak kaydediyoruz
+              );
 
-              await dekontOlusturVeGonder(ogrenci, ogrenciAdi: '');
+              // 2. GoogleSheetService'e gönder
+              bool basarili = await GoogleSheetService.addPayment(yeniOdeme);
 
+              if (basarili) {
+                if (context.mounted) Navigator.pop(context);
+
+                // Opsiyonel: Dekont süreci
+                // await dekontOlusturVeGonder(student, yeniOdeme);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Ödeme başarıyla tabloya işlendi."),
+                    ),
+                  );
+                }
+              } else {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Hata: Kayıt yapılamadı!")),
+                  );
+                }
+              }
             },
-          )
-
+            child: const Text("Ödemeyi Onayla"),
+          ),
         ],
       );
+    },
+  );
+}
+*/
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:my_app/datapage/data_page/data.dart';
+import 'package:my_app/datapage/fetch_data_page.dart';
 
+void odemeFormuAc(
+  BuildContext context,
+  Users student,
+  Group? seciliGrup,
+  Users currentUser,
+) {
+  final TextEditingController miktarController = TextEditingController(
+    text: seciliGrup?.monthly_fee ?? "",
+  );
+  final TextEditingController notController = TextEditingController();
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text("${student.first_name} ${student.last_name}"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Branş: ${seciliGrup?.sports_id ?? 'Genel'}",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: miktarController,
+              decoration: const InputDecoration(
+                labelText: "Tutar (TL)",
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: notController,
+              decoration: const InputDecoration(
+                labelText: "Ödeme Notu / Dekont No",
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Vazgeç"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (miktarController.text.isEmpty) return;
+
+              final now = DateTime.now();
+              final formattedDate =
+                  "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+              final yeniOdeme = Payment(
+                payments_id: "",
+                student_id: student.app,
+                groups_id: seciliGrup?.groups_id ?? "",
+                recorded_by: currentUser.app,
+                amount: miktarController.text,
+                due_date: "",
+                paid_date: formattedDate,
+                status: "paid",
+                payment_method: "Nakit",
+                note: notController.text,
+              );
+
+              bool basarili = await GoogleSheetService.addPayment(yeniOdeme);
+
+              if (basarili) {
+                if (context.mounted) Navigator.pop(context);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Ödeme başarıyla tabloya işlendi."),
+                    ),
+                  );
+                }
+              } else {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Hata: Kayıt yapılamadı!")),
+                  );
+                }
+              }
+            },
+            child: const Text("Ödemeyi Onayla"),
+          ),
+        ],
+      );
     },
   );
 }

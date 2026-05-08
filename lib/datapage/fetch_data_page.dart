@@ -1,215 +1,3308 @@
+/*
+  GoogleSheetService sınıfı, Google Sheets API'si üzerinden veri çekme, kullanıcı işlemleri, bildirim yönetimi ve diğer temel işlevleri sağlayan merkezi bir hizmettir. Bu sınıf, uygulamanın farklı bölümlerinde veri erişimini kolaylaştırmak ve kod tekrarını azaltmak için tasarlanmıştır.
+
+  Temel Özellikler:
+  - fetchTable: Belirli bir sayfadan (sheet) veri çekmek için genel bir fonksiyon.
+  - getUsers, getBranches, getSports, getGroups: Veritabanındaki temel tabloları çekmek için özel fonksiyonlar.
+  - login, registerUser, updateProfile: Kullanıcı işlemleri için fonksiyonlar.
+  - getNotificationsForUser, markNotificationAsRead: Bildirim yönetimi için fonksiyonlar.
+  - uploadImageToDrive: Google Drive'a fotoğraf yüklemek için fonksiyon.
+  - assignStudentToGroup, removeStudentFromGroup, assignCoachToGroup: Grup yönetimi için fonksiyonlar.
+
+  Bu sınıf, uygulamanın veri katmanını soyutlayarak diğer bileşenlerin sadece gerekli fonksiyonları çağırmasını sağlar. Ayrıca, hata yönetimi ve loglama ile API çağrılarının durumunu takip etmeye yardımcı olur.
+*/
+/*
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:my_app/ptpage/attandance/attandance_model.dart';
 import 'dart:convert';
-import 'package:my_app/datapage/data_page/data.dart'; // Student modeli burada sanırım
+import 'package:my_app/datapage/data_page/data.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 
 class GoogleSheetService {
-  static const String _baseUrl = "https://script.google.com/macros/s/AKfycbzzDqSHW2otqQKtPI8cuTE025ranIkbOYM2SrI_cinfeV23I9D5BINB9Yszxa92e1do/exec";
-
-  // --- TEMEL OKUMA FONKSİYONU ---
-  static Future<List<dynamic>> fetchTable(String sheetName) async {
+  static const String _baseUrl =
+      "https://script.google.com/macros/s/AKfycbwHaxA62z-nOKcLtaHd8FH8ri2jDqFFTuUi5wNqkeeb9WH6y5w7L6FReXyq4ICYynBA/exec";
+  // =========================================================================
+  // 🔥 MERKEZİ POST FONKSİYONU (302 YÖNLENDİRMESİNİ OTOMATİK ÇÖZER)
+  // =========================================================================
+  static Future<http.Response?> _postRequest(
+    Map<String, dynamic> bodyData,
+  ) async {
     try {
-      final response = await http.get(Uri.parse("$_baseUrl?sheet=$sheetName"));
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        print("Hata: ${response.statusCode}");
-        return [];
+      var response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(bodyData),
+      );
+
+      if (response.statusCode == 302) {
+        String? redirectUrl = response.headers['location'];
+
+        if (redirectUrl == null && response.body.contains('HREF="')) {
+          final start = response.body.indexOf('HREF="') + 6;
+          final end = response.body.indexOf('"', start);
+          redirectUrl = response.body
+              .substring(start, end)
+              .replaceAll('&amp;', '&');
+        }
+
+        if (redirectUrl != null) {
+          response = await http.get(Uri.parse(redirectUrl));
+        }
       }
+
+      return response;
     } catch (e) {
-      print("Bağlantı Hatası: $e");
+      print("POST İstek Hatası: $e");
+      return null;
+    }
+  }
+
+  static Future<List<Notifications>> getNotifications({required userId}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl?sheet=notifications'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decoded = json.decode(response.body);
+
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final List<Notifications> notifications = data.map((item) {
+            return Notifications(
+              notifications_id: item['notifications_id']?.toString() ?? '',
+              sender_id: item['sender_id']?.toString() ?? '',
+              recipient_id: item['recipient_id']?.toString() ?? '',
+              title: item['title']?.toString() ?? '',
+              message: item['message']?.toString() ?? '',
+              type: item['type']?.toString() ?? 'announcement',
+              is_read: item['is_read']?.toString() ?? 'FALSE',
+              sent_at: item['sent_at']?.toString() ?? '',
+              groups_id: item['groups_id']?.toString() ?? '', // 🔥 VARSA EKLE
+            );
+          }).toList();
+
+          print("📊 Toplam bildirim: ${notifications.length}");
+          for (var n in notifications) {
+            print(
+              "   Bildirim: ${n.title} - recipient_id: '${n.recipient_id}'",
+            );
+          }
+
+          return notifications;
+        }
+      }
+      return [];
+    } catch (e) {
+      print("❌ getNotifications hatası: $e");
       return [];
     }
   }
 
-
-
-
-
- //--------------------------------------------------------------------
-  static Future<List<Student>> getStudents() async {
-   
-    final List<dynamic> rawData = await fetchTable("Students");
-    
-    return rawData.map((item) => Student.fromJson(item)).toList();
-  }
-//--------------------------------------------------------------------
-  // --- KOÇ FİLTRELEME FONKSİYONU ---
-  static Future<List<Student>> getStudentsForCoach(String coachBranchId) async {
-    // Artık yukarıdaki getStudents() fonksiyonu var, hata vermez
-    final allStudents = await getStudents(); 
-
-    // Şubeye göre filtrele
-    return allStudents.where((s) => s.branchId == coachBranchId).toList();
-  }
-
-
-
-
-
-
-
-
-
-
-
-//--------------------------------------------------------------------
-//login için debug için önemli kalabilir.
-/*
-static Future<Map<String, dynamic>?> login(String email, String password) async {
-  final List<dynamic> users = await fetchTable("Users");
-  
-  print("--- DEBUG BAŞLADI ---");
-  for (var u in users) {
-    var sEmail = u['email'].toString().trim();
-    var sPass = u['password_hash'].toString().trim();
-    
-    print("Sorgulanan: '$email' == '$sEmail' ?");
-    print("Sorgulanan Şifre: '$password' == '$sPass' ?");
-
-    if (sEmail == email.trim() && sPass == password.trim()) {
-      print("BULDUM! Giriş onaylandı.");
-      // ... geri kalan kod ...
-      return u; 
-    }
-  }
-  print("EŞLEŞME YOK!");
-  return null;
-}
-*/
-
-static Future<Map<String, dynamic>?> login(String email, String password) async {
-  try {
-    // 1. Tüm kullanıcılar tablosunu çek
-    final List<dynamic> users = await fetchTable("Users");
-    
-    // 2. Email ve Şifre kontrolü (Trim ve String zorlaması ile)
-    final user = users.firstWhere(
-      (u) => u['email'].toString().trim() == email.trim() && 
-             u['password_hash'].toString().trim() == password.trim(),
-      orElse: () => null,
-    );
-
-    if (user != null) {
-      print("Giriş başarılı! Rol: ${user['role']}");
-
-      // 3. Eğer kullanıcı KOÇ ise direkt Users verisini döndür
-      if (user['role'].toString().toLowerCase() == 'koc') {
-        // İstersen burada Coaches tablosundan da ek bilgi çekebilirsin
-        return user; 
-      } 
-      
-      // 4. Eğer kullanıcı ÖĞRENCİ (veya veli) ise Students tablosundan detayları getir
-      else {
-        final List<dynamic> students = await fetchTable("Students");
-        final studentData = students.firstWhere(
-          (s) => s['user_id'].toString() == user['user_id'].toString(),
-          orElse: () => null,
-        );
-        
-        // Öğrenci verisi bulunduysa döndür, bulunamadıysa ana kullanıcıyı döndür
-        return studentData ?? user;
-      }
-    }
-    
-    print("Hata: Kullanıcı bulunamadı veya şifre yanlış.");
-    return null;
-    
-  } catch (e) {
-    print("Login fonksiyonunda hata oluştu: $e");
-    return null;
-  }
-}
-//--------------------------------------------------------------------
-// --- MASTER KAYIT (REGISTER EVERYWHERE) ---
-  static Future<bool> registerEverywhere(Map<String, dynamic> allInfo) async {
+  /*
+  static Future<List<Notifications>> getNotifications({required userId}) async {
     try {
-      final response = await http.post(
-        Uri.parse(_baseUrl),
-        body: jsonEncode({
-          "action": "registerEverywhere",
-          "data": allInfo,
-        }),
+      final response = await http.get(
+        Uri.parse('$_baseUrl?sheet=notifications'),
+        headers: {'Content-Type': 'application/json'},
       );
-      
+
       if (response.statusCode == 200) {
-        var result = json.decode(response.body);
-        return result['status'] == 'success';
+        final Map<String, dynamic> decoded = json.decode(response.body);
+
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final List<Notifications> tumBildirimler = data.map((item) {
+            return Notifications(
+              notifications_id: item['notifications_id']?.toString() ?? '',
+              sender_id: item['sender_id']?.toString() ?? '',
+              recipient_id: item['recipient_id']?.toString() ?? '',
+              title: item['title']?.toString() ?? '',
+              message: item['message']?.toString() ?? '',
+              type: item['type']?.toString() ?? 'announcement',
+              is_read: item['is_read']?.toString() ?? 'FALSE',
+              sent_at: item['sent_at']?.toString() ?? '',
+              groups_id: item['groups_id']?.toString() ?? '',
+            );
+          }).toList();
+
+          // 🔥 FİLTREYİ BURADA YAP!
+          final String userIdStr = userId.toString();
+          final filtered = tumBildirimler.where((n) {
+            final recipientId = n.recipient_id?.toString() ?? '';
+            return recipientId == 'all' || recipientId == userIdStr;
+          }).toList();
+
+          print(
+            "📊 Toplam bildirim: ${tumBildirimler.length}, Filtrelenmiş: ${filtered.length}",
+          );
+          for (var n in filtered) {
+            print("   ✅ ${n.title} - recipient_id: '${n.recipient_id}'");
+          }
+
+          return filtered;
+        }
+      }
+      return [];
+    } catch (e) {
+      print("❌ getNotifications hatası: $e");
+      return [];
+    }
+  }
+*/
+  // SMS ile kod gönderme (Twilio veya benzeri servis gerekir)
+  static Future<bool> send2FACode(String phoneNumber, String code) async {
+    try {
+      final response = await _postRequest({
+        "action": "send2FACode",
+        "phone": phoneNumber,
+        "code": code,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true;
       }
       return false;
     } catch (e) {
-      print("Kayıt Hatası: $e");
+      print("SMS gönderme hatası: $e");
       return false;
     }
   }
 
+  static Future<void> updateLastLogin(String userId) async {
+    try {
+      // Önce kullanıcıyı bul
+      final users = await getUsers();
+      final user = users.firstWhere((u) => u.app == userId);
 
+      // Güncel bilgilerle kaydet
+      final response = await _postRequest({
+        "action": "insert",
+        "table": "users",
+        "data": {
+          "app": user.app,
+          "first_name": user.first_name,
+          "last_name": user.last_name,
+          "email": user.email,
+          "phone": user.phone,
+          "password_hash": user.password_hash,
+          "role": user.role,
+          "profile_photo_url": user.profile_photo_url,
+          "branches_id": user.branches_id,
+          "amount": user.amount,
+          "b_date": user.b_date,
+          "created_at": user.created_at,
+          "last_login": DateTime.now()
+              .toIso8601String(), // 🔥 SADECE BURAYI GÜNCELLE
+          "is_active": user.is_active,
+        },
+      });
 
+      if (response != null && response.statusCode == 200) {
+        print("✅ Son giriş güncellendi: $userId");
+      }
+    } catch (e) {
+      print("Güncelleme hatası: $e");
+    }
+  }
 
+  // =========================================================================
+  // ✅ TEMEL OKUMA FONKSİYONU (GET)
+  // =========================================================================
+  static Future<List<dynamic>> fetchTable(String sheetName) async {
+    try {
+      final response = await http.get(Uri.parse("$_baseUrl?sheet=$sheetName"));
 
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
 
-//--------------------------------------------------------------------
-
- // 1. Belirli bir öğrencinin yoklamalarını getir
-static Future<List<Attendance>> getAttendances(String studentId) async {
-  final List<dynamic> rawData = await fetchTable("Attendances");
-  return rawData
-      .map((item) => Attendance.fromJson(item))
-      .where((a) => a.studentId == studentId)
-      .toList();
-}
-
-// 2. Yeni yoklama kaydet
-static Future<bool> saveAttendance(Attendance attendance) async {
-  try {
-    final response = await http.post(
-      Uri.parse(_baseUrl),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "action": "saveAttendance",
-        "sheet": "Attendances",
-        "data": attendance.toJson(),
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final result = jsonDecode(response.body);
-
-      // result Map mi, yoksa başka tip mi?
-      if (result is Map) {
-        // Eğer Map ve status key varsa kontrol et
-        if (result.containsKey('status')) {
-          return result['status'] == 'success';
-        } else {
-          return true; // Map ama status yoksa varsayılan true
+        if (decoded is Map && decoded.containsKey('success')) {
+          if (decoded['success'] == true && decoded['data'] is List) {
+            return decoded['data'] as List<dynamic>;
+          } else {
+            print("fetchTable - API Hatası: ${decoded['error']}");
+            return [];
+          }
+        } else if (decoded is List) {
+          return decoded;
         }
-      } else {
-        // result Map değilse direkt true/false dönebiliriz
-        return result.toString().toLowerCase() == 'success';
+      }
+      return [];
+    } catch (e) {
+      print("fetchTable - Bağlantı Hatası: $e");
+      return [];
+    }
+  }
+
+  static Future<String?> uploadImageToDrive(
+    File imageFile,
+    String fileName,
+  ) async {
+    try {
+      // Base64'e çevir
+      List<int> imageBytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+
+      final response = await _postRequest({
+        "action": "uploadImage",
+        "file_name": fileName,
+        "file_data": base64Image,
+        "folder": "profile_photos",
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          print("✅ Fotoğraf yüklendi: ${decoded['url']}");
+          return decoded['url'];
+        }
+      }
+      return null;
+    } catch (e) {
+      print("Fotoğraf yükleme hatası: $e");
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ KULLANICI İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Users>> getUsers() async {
+    final rawData = await fetchTable("users");
+    return rawData.map((item) => Users.fromJson(item)).toList();
+  }
+
+  static Future<List<Users>> getStudents() async {
+    final rawData = await fetchTable("users");
+    return rawData.map((item) => Users.fromJson(item)).toList();
+  }
+
+  static Future<List<Users>> getStudentsForCoach(String coachBranchId) async {
+    final allStudents = await getStudents();
+    return allStudents.where((s) => s.branches_id == coachBranchId).toList();
+  }
+
+  static Future<List<Users>> getCoachesOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'coach').toList();
+  }
+
+  static Future<List<Users>> getStudentsOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'student').toList();
+  }
+
+  static Future<List<Users>> getParentsOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'parent').toList();
+  }
+
+  static Future<Users?> login(String email, String password) async {
+    print("========== LOGIN TEST ==========");
+    print("Email: $email");
+
+    final response = await _postRequest({
+      "action": "login",
+      "email": email,
+      "password": password,
+    });
+
+    print("Response status: ${response?.statusCode}");
+    print("Response body: ${response?.body}");
+
+    if (response != null && response.statusCode == 200) {
+      try {
+        final decoded = json.decode(response.body);
+        print("Decoded: $decoded");
+
+        if (decoded['success'] == true) {
+          Map<String, dynamic>? userMap;
+
+          if (decoded['data'] != null && decoded['data']['user'] != null) {
+            userMap = Map<String, dynamic>.from(decoded['data']['user']);
+            print("✅ userMap data.user'dan alındı");
+          } else if (decoded['user'] != null) {
+            userMap = Map<String, dynamic>.from(decoded['user']);
+            print("✅ userMap user'dan alındı");
+          }
+
+          if (userMap != null) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('logged_user', jsonEncode(userMap));
+
+            print("✅ Login başarılı! Kullanıcı: ${userMap['email']}");
+            print(
+              "✅ Kullanıcı adı: ${userMap['first_name']} ${userMap['last_name']}",
+            );
+            return Users.fromJson(userMap);
+          } else {
+            print("❌ userMap oluşturulamadı");
+          }
+        } else {
+          print("❌ Login başarısız: ${decoded['error']}");
+        }
+      } catch (e) {
+        print("❌ JSON parse hatası: $e");
       }
     } else {
-      print("HTTP Hatası: ${response.statusCode}, body: ${response.body}");
+      print("❌ HTTP hatası: ${response?.statusCode}");
+    }
+
+    return null;
+  }
+
+  Future<String> loadJsonAsset(String fileName) async {
+    return await rootBundle.loadString('assets/data/$fileName.json');
+  }
+
+  static Future<Users?> loginRequest(String email, String password) async {
+    return await login(email, password);
+  }
+
+  static Future<bool> registerUser(Users newUser) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "users",
+      "data": newUser.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  static Future<bool> updateProfile(Map<String, dynamic> data) async {
+    final response = await _postRequest({"action": "updateUser", "data": data});
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  Future<Users?> getSavedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? userJson = prefs.getString('logged_user');
+
+    if (userJson != null) {
+      final Map<String, dynamic> userMap = json.decode(userJson);
+      print("✅ Kayıtlı kullanıcı bulundu: ${userMap['email']}");
+      return Users.fromJson(userMap);
+    }
+
+    print("❌ Kayıtlı kullanıcı yok");
+    return null;
+  }
+
+  static Future<bool> deactivateUser(String userId) async {
+    final response = await _postRequest({
+      "action": "deactivateUser",
+      "user_id": userId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ BRANCH İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Branches>> getBranches() async {
+    final rawData = await fetchTable("branches");
+    return rawData.map((item) => Branches.fromJson(item)).toList();
+  }
+
+  static Future<Branches?> getBranchById(String branchId) async {
+    final allBranches = await getBranches();
+    try {
+      return allBranches.firstWhere((b) => b.branches_id == branchId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ SPORTS İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Sports>> getSports() async {
+    final rawData = await fetchTable("sports");
+    return rawData.map((item) => Sports.fromJson(item)).toList();
+  }
+
+  static Future<Sports?> getSportById(String sportId) async {
+    final allSports = await getSports();
+    try {
+      return allSports.firstWhere((s) => s.sports_id == sportId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ GRUP İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Group>> getGroups() async {
+    final rawData = await fetchTable("groups");
+    return rawData.map((item) => Group.fromJson(item)).toList();
+  }
+
+  static Future<List<Group>> getGroupsByCoach(String coachId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByBranch(String branchId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.branches_id == branchId).toList();
+  }
+
+  static Future<Group?> getGroupById(String groupId) async {
+    final allGroups = await getGroups();
+    try {
+      return allGroups.firstWhere((g) => g.groups_id == groupId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<GroupStudent>> getGroupStudentsByGroupId(
+    String groupId,
+  ) async {
+    final all = await getGroupStudents();
+    print("🔍 getGroupStudentsByGroupId: groupId=$groupId");
+    print("   Toplam ilişki: ${all.length}");
+
+    final filtered = all.where((gs) => gs.groups_id == groupId).toList();
+
+    print("   Filtrelenmiş: ${filtered.length}");
+    for (var gs in filtered) {
+      print("      student_id: ${gs.student_id}, is_active: ${gs.is_active}");
+    }
+
+    return filtered;
+  }
+
+  static Future<List<Group>> getGroupsByCoachId(String coachId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByStudentId(String studentId) async {
+    final allGroupRelations = await getGroupStudents();
+    final allGroups = await getGroups();
+
+    final studentGroupIds = allGroupRelations
+        .where((rel) => rel.student_id == studentId && rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    return allGroups
+        .where((g) => studentGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  static Future<Users?> getStudentCoach(String studentId) async {
+    final studentGroups = await getGroupsByStudentId(studentId);
+    if (studentGroups.isEmpty) return null;
+
+    final coachId = studentGroups.first.coach_id;
+    final coaches = await getCoachesOnly();
+    try {
+      final coachUser = coaches.firstWhere((c) => c.app == coachId);
+      return coachUser;
+    } catch (e) {
+      print("Öğrencinin antrenörü bulunamadı: $e");
+      return null;
+    }
+  }
+
+  static Future<bool> updateGroup(
+    String groupId,
+    Map<String, dynamic> updateData,
+  ) async {
+    final response = await _postRequest({
+      "action": "updateGroup",
+      "group_id": groupId,
+      "data": updateData,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ GRUP-ÖĞRENCİ İLİŞKİLERİ
+  // =========================================================================
+  static Future<List<GroupStudent>> getGroupStudents() async {
+    final rawData = await fetchTable("group_students");
+    return rawData.map((item) => GroupStudent.fromJson(item)).toList();
+  }
+
+  static Future<List<GroupStudent>> getGroupStudentsByStudentId(
+    String studentId,
+  ) async {
+    final all = await getGroupStudents();
+    return all.where((gs) => gs.student_id == studentId).toList();
+  }
+
+  static Future<List<Group>> getActiveGroupsByStudentId(
+    String studentId,
+  ) async {
+    final allGroupRelations = await getGroupStudentsByStudentId(studentId);
+    final activeGroupIds = allGroupRelations
+        .where((rel) => rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    final allGroups = await getGroups();
+    return allGroups
+        .where((g) => activeGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  static Future<bool> assignStudentToGroup(
+    String studentId,
+    String groupId,
+  ) async {
+    final response = await _postRequest({
+      "action": "assignStudentToGroup",
+      "student_id": studentId,
+      "group_id": groupId,
+      "is_active": "TRUE",
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      return decoded['success'] == true;
+    }
+    return false;
+  }
+
+  static Future<bool> removeStudentFromGroup(
+    String studentId,
+    String groupId,
+  ) async {
+    final response = await _postRequest({
+      "action": "removeStudentFromGroup",
+      "student_id": studentId,
+      "group_id": groupId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      return decoded['success'] == true;
+    }
+    return false;
+  }
+
+  static Future<bool> assignCoachToGroup(String groupId, String coachId) async {
+    final response = await _postRequest({
+      "action": "assignCoachToGroup",
+      "group_id": groupId,
+      "coach_id": coachId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      return decoded['success'] == true;
+    }
+    return false;
+  }
+
+  /*
+  // =========================================================================
+  // ✅ BİLDİRİM İŞLEMLERİ (TEK VE DÜZELTİLMİŞ)
+  // =========================================================================
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      print("🔍 getNotificationsForUser - userId: '$userId'");
+
+      final rawData = await fetchTable("notifications");
+
+      if (rawData.isEmpty) return [];
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+
+        String recipientId = notif['recipient_id']?.toString() ?? '';
+        String title = notif['title']?.toString() ?? '';
+
+        print(
+          "   Kontrol: recipient_id='$recipientId' == userId='$userId' ? ${recipientId == userId}",
+        );
+
+        // 🔥 EĞER KULLANICI ID BOŞSA veya 'all' ise veya eşleşiyorsa
+        if (userId.isEmpty || recipientId == 'all' || recipientId == userId) {
+          notifications.add(notif);
+          print("   ✅ EKLENDİ: $title");
+        } else {
+          print("   ❌ EKLENMEDİ: $title");
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+
+  */
+  /*
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+  String userId,
+) async {
+  try {
+    final rawData = await fetchTable("notifications");
+    
+    if (rawData.isEmpty) return [];
+
+    List<Map<String, dynamic>> notifications = [];
+
+    for (var item in rawData) {
+      Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+      
+      // 🔥 YÖNETİCİ İÇİN TÜM BİLDİRİMLERİ GÖSTER
+      // userId boş veya 'admin' veya 'Admin' ise tümünü göster
+      if (userId.isEmpty || 
+          userId.toLowerCase() == 'admin' || 
+          notif['recipient_id'] == 'all' || 
+          notif['recipient_id'] == userId) {
+        notifications.add(notif);
+      }
+    }
+
+    notifications.sort((a, b) {
+      DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+      DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+      return dateB.compareTo(dateA);
+    });
+
+    print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+    return notifications;
+  } catch (e) {
+    print("Bildirimler alınamadı: $e");
+    return [];
+  }
+}*/
+  /*
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      final rawData = await fetchTable("notifications");
+
+      if (rawData.isEmpty) return [];
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+
+        // 🔥 YÖNETİCİ İÇİN TÜM BİLDİRİMLERİ GÖSTER
+        // userId boş veya 'admin' veya 'Admin' ise tümünü göster
+        if (userId.isEmpty ||
+            userId.toLowerCase() == 'admin' ||
+            notif['recipient_id'] == 'all' ||
+            notif['recipient_id'] == userId) {
+          notifications.add(notif);
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+  */
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
+
+      final rawData = await fetchTable("notifications");
+      print("📊 Toplam bildirim: ${rawData.length}");
+
+      if (rawData.isEmpty) return [];
+
+      // 🔥 ADMİN KONTROLÜ (userId boş veya "Admin" veya "admin" veya sayı değilse)
+      bool isAdmin =
+          userId.isEmpty ||
+          userId == "Admin" ||
+          userId == "admin" ||
+          userId == "ADMIN";
+
+      // 🔥 KULLANICININ GRUPLARINI BUL (SADECE ADMIN DEĞİLSE)
+      List<String> userGroups = [];
+
+      if (!isAdmin) {
+        final allUsers = await getUsers();
+        final currentUser = allUsers.firstWhere(
+          (u) => u.app.toString() == userId,
+          orElse: () => Users(
+            app: "",
+            first_name: "",
+            last_name: "",
+            email: "",
+            phone: "",
+            password_hash: "",
+            role: "",
+            profile_photo_url: "",
+            amount: "",
+            b_date: "",
+            created_at: "",
+            last_login: "",
+            is_active: "",
+            branches_id: "",
+          ),
+        );
+
+        if (currentUser.role.toLowerCase() == 'coach' ||
+            currentUser.role.toLowerCase() == 'antrenör') {
+          final coaches = await getCoaches();
+          final currentCoach = coaches.firstWhere(
+            (c) => c.user_id == userId,
+            orElse: () => Coach(
+              coach_id: "",
+              user_id: "",
+              branches_id: "",
+              sports_id: "",
+              bio: "",
+              certificate_info: "",
+              monthly_salary: "",
+              hired_at: "",
+            ),
+          );
+          if (currentCoach.coach_id.isNotEmpty) {
+            final groups = await getGroupsByCoach(currentCoach.coach_id);
+            userGroups = groups.map((g) => g.groups_id.toString()).toList();
+            print("📚 Antrenörün grupları: $userGroups");
+          }
+        } else if (currentUser.role.toLowerCase() == 'student') {
+          final groupRelations = await getGroupStudentsByStudentId(userId);
+          userGroups = groupRelations
+              .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
+              .map((rel) => rel.groups_id.toString())
+              .toList();
+          print("📚 Öğrencinin grupları: $userGroups");
+        }
+      } else {
+        print("👑 Admin kullanıcı - tüm bildirimleri görecek");
+      }
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+        String recipientId = notif['recipient_id']?.toString() ?? '';
+        String title = notif['title']?.toString() ?? '';
+
+        // 🔥 FİLTRELEME KURALLARI:
+        bool shouldAdd = false;
+        String reason = "";
+
+        // 1. Herkese açık
+        if (recipientId == 'all' ||
+            recipientId == 'Tümü' ||
+            recipientId == 'ALL') {
+          shouldAdd = true;
+          reason = "Herkese açık";
+        }
+        // 2. 🔥 ADMIN İSE TÜM BİLDİRİMLERİ GÖSTER (GRUP DA DAHİL)
+        else if (isAdmin) {
+          shouldAdd = true;
+          reason = "Admin yetkisi";
+        }
+        // 3. Direkt kullanıcıya gönderilmiş
+        else if (recipientId == userId) {
+          shouldAdd = true;
+          reason = "Direkt kullanıcıya";
+        }
+        // 4. Kullanıcının grubuna gönderilmiş
+        else if (userGroups.contains(recipientId)) {
+          shouldAdd = true;
+          reason = "Gruba özel (grup $recipientId)";
+        }
+
+        if (shouldAdd) {
+          notifications.add(notif);
+          print("   ✅ $reason: $title");
+        } else {
+          print("   ❌ EKLENMEDİ: $title (recipientId=$recipientId)");
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+
+  /*
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
+
+      final rawData = await fetchTable("notifications");
+      print("📊 Toplam bildirim: ${rawData.length}");
+
+      if (rawData.isEmpty) return [];
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+        String recipientId = notif['recipient_id']?.toString() ?? '';
+        String title = notif['title']?.toString() ?? '';
+
+        print("   recipientId: '$recipientId', userId: '$userId'");
+
+        // 🔥 HERKESE AÇIK veya DİREKT KULLANICIYA
+        if (recipientId == 'all' ||
+            recipientId == 'Tümü' ||
+            recipientId == 'ALL') {
+          notifications.add(notif);
+          print("   ✅ Herkese açık: $title");
+        } else if (recipientId == userId) {
+          notifications.add(notif);
+          print("   ✅ Direkt kullanıcıya: $title");
+        } else {
+          print("   ❌ EKLENMEDİ: $title");
+        }
+      }
+
+      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+*/
+  /*
+  static Future<void> markNotificationAsRead(
+    String notificationId,
+    String userId,
+  ) async {
+    try {
+      final response = await _postRequest({
+        "action": "updateNotification",
+        "notifications_id": notificationId,
+        "is_read": "TRUE",
+      });
+
+      if (response != null && response.statusCode == 200) {
+        print("✅ Bildirim okundu olarak işaretlendi: $notificationId");
+      } else {
+        print("❌ Bildirim güncellenemedi: $notificationId");
+      }
+    } catch (e) {
+      print("Okundu işaretlenemedi: $e");
+    }
+  }
+*/
+  static Future<void> markNotificationAsRead(
+    String notificationId,
+    String userId,
+  ) async {
+    try {
+      print("📢 Bildirim okunuyor - ID: $notificationId");
+
+      final response = await _postRequest({
+        "action": "updateNotification",
+        "notifications_id": notificationId, // 🔥 SADECE notificationId gönder
+        "is_read": "TRUE",
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          print("✅ Bildirim okundu olarak işaretlendi: $notificationId");
+        } else {
+          print("❌ Bildirim güncellenemedi: ${decoded['error']}");
+        }
+      } else {
+        print("❌ HTTP Hatası: ${response?.statusCode}");
+      }
+    } catch (e) {
+      print("Okundu işaretlenemedi: $e");
+    }
+  }
+
+  static Future<int> getUnreadNotificationCount(String userId) async {
+    final notifications = await getNotificationsForUser(userId);
+    final unreadCount = notifications.where((n) {
+      String isRead = n['is_read']?.toString().toUpperCase() ?? '';
+      return isRead != 'TRUE';
+    }).length;
+
+    print("📊 Okunmamış bildirim sayısı: $unreadCount");
+    return unreadCount;
+  }
+
+  static Future<bool> addNotification(
+    Map<String, dynamic> notificationData,
+  ) async {
+    print("📢 addNotification çağrıldı");
+    //  print("   recipient_id: ${notificationData['recipient_id']}");
+    print("   title: ${notificationData['title']}");
+    print(
+      "   recipient_id: ${notificationData['recipient_id']} (${notificationData['recipient_id'].runtimeType})",
+    );
+    print("   title: ${notificationData['title']}");
+
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "notifications",
+      "data": notificationData,
+    });
+
+    print("   Response status: ${response?.statusCode}");
+    print("   Response body: ${response?.body}");
+
+    if (response != null && response.statusCode == 200) {
+      try {
+        final decoded = jsonDecode(response.body);
+        final success = decoded['success'] == true;
+        if (success) {
+          print("✅ Bildirim başarıyla eklendi");
+        } else {
+          print("❌ Bildirim eklenemedi: ${decoded['error']}");
+        }
+        return success;
+      } catch (e) {
+        print("❌ JSON parse hatası: $e");
+        return false;
+      }
+    }
+    return false;
+  }
+
+  static DateTime _parseDateTime(String dateTimeStr) {
+    try {
+      if (dateTimeStr.contains('T')) {
+        return DateTime.parse(dateTimeStr);
+      } else if (dateTimeStr.contains(' ')) {
+        return DateTime.parse(dateTimeStr.replaceAll(' ', 'T'));
+      }
+      return DateTime(2000);
+    } catch (e) {
+      return DateTime(2000);
+    }
+  }
+
+  // =========================================================================
+  // ✅ COACH İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Coach>> getCoaches() async {
+    final rawData = await fetchTable("coaches");
+
+    final coaches = <Coach>[];
+    for (var item in rawData) {
+      final Map<String, dynamic> cleanItem = {};
+      item.forEach((key, value) {
+        String cleanKey = key.toString().trim();
+        cleanItem[cleanKey] = value;
+      });
+
+      final coach = Coach.fromJson(cleanItem);
+      if (coach.coach_id.isNotEmpty) {
+        coaches.add(coach);
+        print(
+          "✅ PARSED: coach_id='${coach.coach_id}', user_id='${coach.user_id}'",
+        );
+      } else {
+        print("⚠️ SKIPPED: coach_id boş");
+      }
+    }
+
+    print("=== SONUÇ: ${coaches.length} coach başarıyla yüklendi");
+    return coaches;
+  }
+
+  static Future<bool> registerCoach(Coach newCoach) async {
+    final coaches = await getCoaches();
+
+    int nextId = 1;
+    if (coaches.isNotEmpty) {
+      final ids = coaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
+      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
+    }
+
+    final updatedCoachData = newCoach.toJson();
+    updatedCoachData['coach_id'] = nextId.toString();
+
+    return await insertData("coaches", updatedCoachData);
+  }
+
+  static Future<bool> registerCoachWithAutoId(Coach newCoach) async {
+    return await registerCoach(newCoach);
+  }
+
+  static Future<bool> addCoachWithAutoId(Map<String, dynamic> coachData) async {
+    final allCoaches = await getCoaches();
+
+    int nextId = 1;
+    if (allCoaches.isNotEmpty) {
+      final ids = allCoaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
+      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
+    }
+
+    coachData['coach_id'] = nextId.toString();
+    return await insertData("coaches", coachData);
+  }
+
+  /*
+  // =========================================================================
+  // ✅ YOKLAMA İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Attendance>> getAttendances() async {
+    final rawData = await fetchTable("attendances");
+    return rawData.map((item) => Attendance.fromJson(item)).toList();
+  }
+*/
+  static Future<List<Attendance>> getAttendancesByStudent(
+    String studentId,
+  ) async {
+    final all = await getAttendances();
+    return all.where((a) => a.student_id == studentId).toList();
+  }
+
+  static Future<bool> saveAttendance(Attendance attendance) async {
+    print(
+      "💾 saveAttendance: Öğrenci=${attendance.student_id}, Tarih=${attendance.attendance_date}, Durum=${attendance.status}",
+    );
+
+    final response = await _postRequest({
+      "action": "saveAttendance",
+      "sheet": "attendances",
+      "data": attendance.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      print("   Sonuç: ${decoded['success']}");
+      return decoded['success'] == true;
+    }
+    print("   ❌ Hata: ${response?.statusCode}");
+    return false;
+  }
+
+  static Future<List<Attendance>> getAttendances() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl?sheet=attendances'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decoded = json.decode(response.body);
+
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final List<Attendance> attendances = data.map((item) {
+            // 🔥 KRİTİK: status değerini doğru parse et
+            String statusValue = item['status']?.toString() ?? "FALSE";
+
+            // Eğer status "TRUE" veya "true" veya true (boolean) gelirse
+            bool isTrue = statusValue.toUpperCase() == "TRUE";
+
+            return Attendance(
+              attendances_id: item['attendances_id']?.toString() ?? '',
+              groups_id: item['groups_id']?.toString() ?? '',
+              student_id: item['student_id']?.toString() ?? '',
+              taken_by: item['taken_by']?.toString() ?? '',
+              attendance_date: item['attendance_date']?.toString() ?? '',
+              status: isTrue ? "TRUE" : "FALSE", // 🔥 DÜZELTİLDİ
+              note: item['note']?.toString() ?? '',
+            );
+          }).toList();
+
+          return attendances;
+        }
+      }
+      return [];
+    } catch (e) {
+      print("❌ getAttendances hatası: $e");
+      return [];
+    }
+  }
+
+  static Future<List<Attendance>> getAttendancesForGroup(String groupId) async {
+    final all = await getAttendances();
+
+    print("🔍 getAttendancesForGroup: groupId=$groupId");
+    print("   Toplam yoklama: ${all.length}");
+
+    final filtered = all.where((a) => a.groups_id == groupId).toList();
+
+    print("   Filtrelenmiş: ${filtered.length}");
+    for (var a in filtered) {
+      final cleanDate = a.attendance_date.split('T')[0];
+      print(
+        "      Tarih: $cleanDate, Öğrenci: ${a.student_id}, Durum: ${a.status}",
+      );
+    }
+
+    return filtered;
+  }
+
+  static Future<List<Attendance>> getTodayAttendance(String groupId) async {
+    final allAttendances = await getAttendancesForGroup(groupId);
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    return allAttendances
+        .where((a) => a.attendance_date.contains(today))
+        .toList();
+  }
+
+  static Future<bool> saveBulkAttendance(List<Attendance> attendances) async {
+    bool allSuccess = true;
+    for (var att in attendances) {
+      final success = await saveAttendance(att);
+      if (!success) allSuccess = false;
+    }
+    return allSuccess;
+  }
+
+  // =========================================================================
+  // ✅ ÖDEME İŞLEMLERİ
+  // =========================================================================
+  static Future<List<Payment>> getPayments() async {
+    final rawData = await fetchTable("payments");
+    return rawData.map((item) => Payment.fromJson(item)).toList();
+  }
+
+  static Future<List<Payment>> getPaymentsByStudent(String studentId) async {
+    final allPayments = await getPayments();
+    return allPayments.where((p) => p.student_id == studentId).toList();
+  }
+
+  static Future<bool> addPayment(Payment payment) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "payments",
+      "data": payment.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ ÖĞRENCİ NOTLARI İŞLEMLERİ
+  // =========================================================================
+  static Future<List<StudentNote>> getStudentNotes() async {
+    final rawData = await fetchTable("student_notes");
+    return rawData.map((item) => StudentNote.fromJson(item)).toList();
+  }
+
+  static Future<List<StudentNote>> getStudentNotesByStudent(
+    String studentId,
+  ) async {
+    final all = await getStudentNotes();
+    return all.where((n) => n.student_id == studentId).toList();
+  }
+
+  static Future<bool> addStudentNote(StudentNote note) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "student_notes",
+      "data": note.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ VELİ-ÖĞRENCİ İLİŞKİLERİ
+  // =========================================================================
+  static Future<List<ParentStudent>> getParentStudents() async {
+    final rawData = await fetchTable("parent_student");
+    return rawData.map((item) => ParentStudent.fromJson(item)).toList();
+  }
+
+  static Future<List<ParentStudent>> getStudentsByParent(
+    String parentId,
+  ) async {
+    final all = await getParentStudents();
+    return all.where((ps) => ps.parent_id == parentId).toList();
+  }
+
+  static Future<List<ParentStudent>> getParentsByStudent(
+    String studentId,
+  ) async {
+    final all = await getParentStudents();
+    return all.where((ps) => ps.student_id == studentId).toList();
+  }
+
+  static Future<bool> addParentStudent(
+    String parentId,
+    String studentId,
+  ) async {
+    return await insertData("parent_student", {
+      "parent_id": parentId,
+      "student_id": studentId,
+    });
+  }
+
+  // =========================================================================
+  // ✅ GENEL VERİ EKLEME
+  // =========================================================================
+  static Future<bool> insertData(
+    String tableName,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": tableName,
+      "data": data,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ MASTER KAYIT
+  // =========================================================================
+  static Future<bool> registerEverywhere(Map<String, dynamic> allInfo) async {
+    final response = await _postRequest({
+      "action": "registerEverywhere",
+      "data": allInfo,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      return jsonDecode(response.body)['success'] == true;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ ÖDEME BİLDİRİMİ GÖNDER (KİŞİYE ÖZEL)
+  // =========================================================================
+  static Future<bool> sendPaymentReminderToStudent(
+    String studentId,
+    String studentName,
+    double amount,
+    String dueDate,
+  ) async {
+    final notifData = {
+      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
+      "sender_id": "Admin",
+      "recipient_id": studentId, // 🔥 KİŞİYE ÖZEL!
+      "groups_id": "", // Boş, çünkü kişiye özel
+      "title": "💰 Ödeme Hatırlatması",
+      "message":
+          "Sayın $studentName, $dueDate tarihinde sona eren $amount TL aidat ödemeniz bulunmaktadır. Lütfen en kısa sürede ödemenizi gerçekleştiriniz.",
+      "type": "payment_reminder",
+      "is_read": "FALSE",
+      "sent_at": DateTime.now().toIso8601String(),
+    };
+
+    return await addNotification(notifData);
+  }
+
+  // Tüm ödeme yapmayan öğrencilere toplu bildirim gönder
+  static Future<int> sendPaymentRemindersToAllLateStudents() async {
+    try {
+      final allPayments = await getPayments();
+      final allStudents = await getStudentsOnly();
+      final today = DateTime.now();
+
+      // Ödeme yapmayan öğrencileri bul (status != 'paid' veya due_date geçmiş)
+      final latePayments = allPayments.where((p) {
+        final dueDate = DateTime.tryParse(p.due_date);
+        final isLate = dueDate != null && dueDate.isBefore(today);
+        final isNotPaid = p.status?.toLowerCase() != 'paid';
+        return isLate && isNotPaid;
+      }).toList();
+
+      int sentCount = 0;
+
+      for (var payment in latePayments) {
+        final student = allStudents.firstWhere(
+          (s) => s.app.toString() == payment.student_id,
+          orElse: () => Users(
+            app: "",
+            branches_id: "",
+            first_name: "Öğrenci",
+            last_name: "",
+            email: "",
+            phone: "",
+            password_hash: "",
+            role: "",
+            profile_photo_url: "",
+            amount: "",
+            b_date: "",
+            created_at: "",
+            last_login: "",
+            is_active: "",
+          ),
+        );
+
+        final success = await sendPaymentReminderToStudent(
+          payment.student_id,
+          "${student.first_name} ${student.last_name}",
+          double.tryParse(payment.amount) ?? 0,
+          payment.due_date,
+        );
+
+        if (success) sentCount++;
+      }
+
+      print("✅ Ödeme bildirimi gönderildi: $sentCount öğrenciye");
+      return sentCount;
+    } catch (e) {
+      print("❌ Ödeme bildirimi gönderilemedi: $e");
+      return 0;
+    }
+  }
+
+  // =========================================================================
+  // ✅ DİREKT ÖĞRENCİYE DUYURU GÖNDER (GRUPTAN BAĞIMSIZ)
+  // =========================================================================
+  static Future<bool> sendAnnouncementToStudent(
+    String studentId,
+    String title,
+    String message,
+  ) async {
+    final notifData = {
+      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
+      "sender_id": "Admin",
+      "recipient_id": studentId, // 🔥 KİŞİYE ÖZEL!
+      "groups_id": "", // Boş, çünkü kişiye özel
+      "title": title,
+      "message": message,
+      "type": "announcement",
+      "is_read": "FALSE",
+      "sent_at": DateTime.now().toIso8601String(),
+    };
+
+    return await addNotification(notifData);
+  }
+}
+*/
+
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:my_app/datapage/data_page/data.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'dart:io';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+
+// =========================================================================
+// 🔥 CACHE MEKANİZMASI
+// =========================================================================
+
+class _CacheItem {
+  final dynamic data;
+  final DateTime expiry;
+  _CacheItem({required this.data, required this.expiry});
+  bool get isExpired => DateTime.now().isAfter(expiry);
+}
+
+class DataCache {
+  static final DataCache _instance = DataCache._internal();
+  factory DataCache() => _instance;
+  DataCache._internal();
+
+  final Map<String, _CacheItem> _cache = {};
+  final Map<String, Future> _pendingFetches = {};
+
+  // Cache süreleri (saniye)
+  static const int CACHE_LONG = 3600; // 1 saat (şubeler, sporlar)
+  static const int CACHE_MEDIUM = 300; // 5 dakika (gruplar, öğrenciler)
+  static const int CACHE_SHORT = 60; // 1 dakika (yoklamalar, ödemeler)
+  static const int CACHE_VERY_SHORT = 30; // 30 saniye (bildirimler)
+
+  Future<T> getOrFetch<T>(
+    String key,
+    Future<T> Function() fetcher, {
+    int ttlSeconds = CACHE_MEDIUM,
+    bool forceRefresh = false,
+  }) async {
+    // Force refresh varsa cache'i temizle
+    if (forceRefresh) {
+      _cache.remove(key);
+    }
+
+    // Cache'de varsa döndür
+    final cached = _cache[key];
+    if (cached != null && !cached.isExpired) {
+      print("📦 CACHE HIT: $key");
+      return cached.data as T;
+    }
+
+    print("🌐 CACHE MISS: $key - Veri çekiliyor...");
+
+    // Aynı anda birden fazla istek varsa bekle
+    if (_pendingFetches.containsKey(key)) {
+      print("⏳ BEKLE: $key - Zaten yükleniyor");
+      return _pendingFetches[key] as Future<T>;
+    }
+
+    // Yeni fetch başlat
+    final future = fetcher()
+        .then((value) {
+          _cache[key] = _CacheItem(
+            data: value,
+            expiry: DateTime.now().add(Duration(seconds: ttlSeconds)),
+          );
+          _pendingFetches.remove(key);
+          print("✅ CACHE SET: $key (${ttlSeconds}s)");
+          return value;
+        })
+        .catchError((e) {
+          _pendingFetches.remove(key);
+          throw e;
+        });
+
+    _pendingFetches[key] = future;
+    return future;
+  }
+
+  void invalidate(String key) {
+    _cache.remove(key);
+    // print("🗑️ CACHE INVALIDATE: $key");
+  }
+
+  void invalidateAll() {
+    _cache.clear();
+    // print("🗑️ CACHE CLEARED: Tüm cache temizlendi");
+  }
+
+  // Tablo bazlı cache temizleme
+  void invalidateTable(String tableName) {
+    invalidate('table_$tableName');
+  }
+
+  // Belli bir süre cache'de kalan verileri temizle
+  void invalidateExpired() {
+    final now = DateTime.now();
+    final keysToRemove = <String>[];
+    _cache.forEach((key, item) {
+      if (item.isExpired) {
+        keysToRemove.add(key);
+      }
+    });
+    for (var key in keysToRemove) {
+      _cache.remove(key);
+    }
+    if (keysToRemove.isNotEmpty) {
+      // print("🗑️ Expired cache temizlendi: ${keysToRemove.length} adet");
+    }
+  }
+}
+
+class GoogleSheetService {
+  static final DataCache _cache = DataCache();
+
+  static const String _baseUrl =
+      "https://script.google.com/macros/s/AKfycbwHaxA62z-nOKcLtaHd8FH8ri2jDqFFTuUi5wNqkeeb9WH6y5w7L6FReXyq4ICYynBA/exec";
+
+  // =========================================================================
+  // 🔥 MERKEZİ POST FONKSİYONU (302 YÖNLENDİRMESİNİ OTOMATİK ÇÖZER)
+  // =========================================================================
+  static Future<http.Response?> _postRequest(
+    Map<String, dynamic> bodyData,
+  ) async {
+    try {
+      var response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(bodyData),
+      );
+
+      if (response.statusCode == 302) {
+        String? redirectUrl = response.headers['location'];
+
+        if (redirectUrl == null && response.body.contains('HREF="')) {
+          final start = response.body.indexOf('HREF="') + 6;
+          final end = response.body.indexOf('"', start);
+          redirectUrl = response.body
+              .substring(start, end)
+              .replaceAll('&amp;', '&');
+        }
+
+        if (redirectUrl != null) {
+          response = await http.get(Uri.parse(redirectUrl));
+        }
+      }
+
+      return response;
+    } catch (e) {
+      // print("POST İstek Hatası: $e");
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ CACHE'Lİ FETCH TABLE
+  // =========================================================================
+
+  static Future<List<dynamic>> fetchTableCached(
+    String sheetName, {
+    bool forceRefresh = false,
+    int? ttlSeconds,
+  }) async {
+    // Her tablo için farklı cache süresi
+    int ttl;
+    switch (sheetName) {
+      case 'branches':
+      case 'sports':
+        ttl = DataCache.CACHE_LONG; // 1 saat
+        break;
+      case 'groups':
+      case 'users':
+      case 'coaches':
+      case 'group_students':
+        ttl = DataCache.CACHE_MEDIUM; // 5 dakika
+        break;
+      case 'attendances':
+      case 'payments':
+        ttl = DataCache.CACHE_SHORT; // 1 dakika
+        break;
+      case 'notifications':
+        ttl = DataCache.CACHE_VERY_SHORT; // 30 saniye
+        break;
+      default:
+        ttl = DataCache.CACHE_MEDIUM;
+    }
+
+    if (ttlSeconds != null) ttl = ttlSeconds;
+
+    return _cache.getOrFetch(
+      'table_$sheetName',
+      () => fetchTable(sheetName),
+      ttlSeconds: ttl,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  // =========================================================================
+  // ✅ TEMEL OKUMA FONKSİYONU (GET) - ORJİNAL (DEĞİŞMEDİ)
+  // =========================================================================
+  static Future<List<dynamic>> fetchTable(String sheetName) async {
+    try {
+      final response = await http.get(Uri.parse("$_baseUrl?sheet=$sheetName"));
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+
+        if (decoded is Map && decoded.containsKey('success')) {
+          if (decoded['success'] == true && decoded['data'] is List) {
+            return decoded['data'] as List<dynamic>;
+          } else {
+            // print("fetchTable - API Hatası: ${decoded['error']}");
+            return [];
+          }
+        } else if (decoded is List) {
+          return decoded;
+        }
+      }
+      return [];
+    } catch (e) {
+      // print("fetchTable - Bağlantı Hatası: $e");
+      return [];
+    }
+  }
+
+  // =========================================================================
+  // ✅ CACHE YÖNETİM METODLARI
+  // =========================================================================
+
+  static void invalidateCache(String tableName) {
+    _cache.invalidateTable(tableName);
+  }
+
+  static void invalidateAllCache() {
+    _cache.invalidateAll();
+  }
+
+  static void invalidateExpiredCache() {
+    _cache.invalidateExpired();
+  }
+
+  // =========================================================================
+  // ✅ CACHE'Lİ GET METODLARI (KULLANILACAK OLANLAR)
+  // =========================================================================
+
+  static Future<List<Users>> getUsersCached({bool forceRefresh = false}) async {
+    final rawData = await fetchTableCached('users', forceRefresh: forceRefresh);
+    return rawData.map((item) => Users.fromJson(item)).toList();
+  }
+
+  static Future<List<Group>> getGroupsCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'groups',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Group.fromJson(item)).toList();
+  }
+
+  static Future<List<GroupStudent>> getGroupStudentsCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'group_students',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => GroupStudent.fromJson(item)).toList();
+  }
+
+  static Future<List<Payment>> getPaymentsCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'payments',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Payment.fromJson(item)).toList();
+  }
+
+  static Future<List<Attendance>> getAttendancesCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'attendances',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Attendance.fromJson(item)).toList();
+  }
+
+  static Future<List<Branches>> getBranchesCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'branches',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Branches.fromJson(item)).toList();
+  }
+
+  static Future<List<Sports>> getSportsCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'sports',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Sports.fromJson(item)).toList();
+  }
+
+  static Future<List<Coach>> getCoachesCached({
+    bool forceRefresh = false,
+  }) async {
+    final rawData = await fetchTableCached(
+      'coaches',
+      forceRefresh: forceRefresh,
+    );
+    return rawData.map((item) => Coach.fromJson(item)).toList();
+  }
+
+  static Future<List<Users>> getStudentsOnlyCached({
+    bool forceRefresh = false,
+  }) async {
+    final allUsers = await getUsersCached(forceRefresh: forceRefresh);
+    return allUsers.where((u) => u.role.toLowerCase() == 'student').toList();
+  }
+
+  static Future<List<Users>> getCoachesOnlyCached({
+    bool forceRefresh = false,
+  }) async {
+    final allUsers = await getUsersCached(forceRefresh: forceRefresh);
+    return allUsers.where((u) => u.role.toLowerCase() == 'coach').toList();
+  }
+
+  static Future<List<Users>> getParentsOnlyCached({
+    bool forceRefresh = false,
+  }) async {
+    final allUsers = await getUsersCached(forceRefresh: forceRefresh);
+    return allUsers.where((u) => u.role.toLowerCase() == 'parent').toList();
+  }
+
+  // =========================================================================
+  // ✅ ORİJİNAL GET METODLARI (GERİYE DÖNÜK UYUMLULUK İÇİN)
+  // Bunlar cache KULLANMAZ, doğrudan API'ye gider
+  // =========================================================================
+
+  static Future<List<Users>> getUsers() async {
+    final rawData = await fetchTable("users");
+    return rawData.map((item) => Users.fromJson(item)).toList();
+  }
+
+  static Future<List<Group>> getGroups() async {
+    final rawData = await fetchTable("groups");
+    return rawData.map((item) => Group.fromJson(item)).toList();
+  }
+
+  static Future<List<GroupStudent>> getGroupStudents() async {
+    final rawData = await fetchTable("group_students");
+    return rawData.map((item) => GroupStudent.fromJson(item)).toList();
+  }
+
+  static Future<List<Payment>> getPayments() async {
+    final rawData = await fetchTable("payments");
+    return rawData.map((item) => Payment.fromJson(item)).toList();
+  }
+
+  static Future<List<Attendance>> getAttendances() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl?sheet=attendances'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decoded = json.decode(response.body);
+
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final List<Attendance> attendances = data.map((item) {
+            String statusValue = item['status']?.toString() ?? "FALSE";
+            bool isTrue = statusValue.toUpperCase() == "TRUE";
+
+            return Attendance(
+              attendances_id: item['attendances_id']?.toString() ?? '',
+              groups_id: item['groups_id']?.toString() ?? '',
+              student_id: item['student_id']?.toString() ?? '',
+              taken_by: item['taken_by']?.toString() ?? '',
+              attendance_date: item['attendance_date']?.toString() ?? '',
+              status: isTrue ? "TRUE" : "FALSE",
+              note: item['note']?.toString() ?? '',
+            );
+          }).toList();
+
+          return attendances;
+        }
+      }
+      return [];
+    } catch (e) {
+      // print("❌ getAttendances hatası: $e");
+      return [];
+    }
+  }
+
+  static Future<List<Branches>> getBranches() async {
+    final rawData = await fetchTable("branches");
+    return rawData.map((item) => Branches.fromJson(item)).toList();
+  }
+
+  static Future<List<Sports>> getSports() async {
+    final rawData = await fetchTable("sports");
+    return rawData.map((item) => Sports.fromJson(item)).toList();
+  }
+
+  static Future<List<Coach>> getCoaches() async {
+    final rawData = await fetchTable("coaches");
+
+    final coaches = <Coach>[];
+    for (var item in rawData) {
+      final Map<String, dynamic> cleanItem = {};
+      item.forEach((key, value) {
+        String cleanKey = key.toString().trim();
+        cleanItem[cleanKey] = value;
+      });
+
+      final coach = Coach.fromJson(cleanItem);
+      if (coach.coach_id.isNotEmpty) {
+        coaches.add(coach);
+      }
+    }
+
+    return coaches;
+  }
+
+  static Future<List<Users>> getStudents() async {
+    final rawData = await fetchTable("users");
+    return rawData.map((item) => Users.fromJson(item)).toList();
+  }
+
+  static Future<List<Users>> getStudentsForCoach(String coachBranchId) async {
+    final allStudents = await getStudents();
+    return allStudents.where((s) => s.branches_id == coachBranchId).toList();
+  }
+
+  static Future<List<Users>> getStudentsOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'student').toList();
+  }
+
+  static Future<List<Users>> getParentsOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'parent').toList();
+  }
+
+  static Future<List<Users>> getCoachesOnly() async {
+    final allUsers = await getUsers();
+    return allUsers.where((u) => u.role.toLowerCase() == 'coach').toList();
+  }
+
+  // =========================================================================
+  // ✅ BİLDİRİM İŞLEMLERİ
+  // =========================================================================
+
+  static Future<List<Notifications>> getNotifications({required userId}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl?sheet=notifications'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> decoded = json.decode(response.body);
+
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final List<Notifications> notifications = data.map((item) {
+            return Notifications(
+              notifications_id: item['notifications_id']?.toString() ?? '',
+              sender_id: item['sender_id']?.toString() ?? '',
+              recipient_id: item['recipient_id']?.toString() ?? '',
+              title: item['title']?.toString() ?? '',
+              message: item['message']?.toString() ?? '',
+              type: item['type']?.toString() ?? 'announcement',
+              is_read: item['is_read']?.toString() ?? 'FALSE',
+              sent_at: item['sent_at']?.toString() ?? '',
+              groups_id: item['groups_id']?.toString() ?? '',
+            );
+          }).toList();
+
+          return notifications;
+        }
+      }
+      return [];
+    } catch (e) {
+      // print("❌ getNotifications hatası: $e");
+      return [];
+    }
+  }
+
+  /*
+
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
+
+      final rawData = await fetchTableCached(
+        'notifications',
+        forceRefresh: false,
+      );
+      print("📊 Toplam bildirim: ${rawData.length}");
+
+      if (rawData.isEmpty) return [];
+
+      bool isAdmin =
+          userId.isEmpty ||
+          userId == "Admin" ||
+          userId == "admin" ||
+          userId == "ADMIN";
+
+      List<String> userGroups = [];
+
+      if (!isAdmin) {
+        final allUsers = await getUsersCached();
+        final currentUser = allUsers.firstWhere(
+          (u) => u.app.toString() == userId,
+          orElse: () => Users(
+            app: "",
+            first_name: "",
+            last_name: "",
+            email: "",
+            phone: "",
+            password_hash: "",
+            role: "",
+            profile_photo_url: "",
+            amount: "",
+            b_date: "",
+            created_at: "",
+            last_login: "",
+            is_active: "",
+            branches_id: "",
+          ),
+        );
+
+        if (currentUser.role.toLowerCase() == 'coach' ||
+            currentUser.role.toLowerCase() == 'antrenör') {
+          final coaches = await getCoachesCached();
+          final currentCoach = coaches.firstWhere(
+            (c) => c.user_id == userId,
+            orElse: () => Coach(
+              coach_id: "",
+              user_id: "",
+              branches_id: "",
+              sports_id: "",
+              bio: "",
+              certificate_info: "",
+              monthly_salary: "",
+              hired_at: "",
+            ),
+          );
+          if (currentCoach.coach_id.isNotEmpty) {
+            final groups = await getGroupsByCoachCached(currentCoach.coach_id);
+            userGroups = groups.map((g) => g.groups_id.toString()).toList();
+            print("📚 Antrenörün grupları: $userGroups");
+          }
+        } else if (currentUser.role.toLowerCase() == 'student') {
+          final groupRelations = await getGroupStudentsByStudentIdCached(
+            userId,
+          );
+          userGroups = groupRelations
+              .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
+              .map((rel) => rel.groups_id.toString())
+              .toList();
+          print("📚 Öğrencinin grupları: $userGroups");
+        }
+      } else {
+        print("👑 Admin kullanıcı - tüm bildirimleri görecek");
+      }
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+        String recipientId = notif['recipient_id']?.toString() ?? '';
+
+        bool shouldAdd = false;
+
+        if (recipientId == 'all' ||
+            recipientId == 'Tümü' ||
+            recipientId == 'ALL') {
+          shouldAdd = true;
+        } else if (isAdmin) {
+          shouldAdd = true;
+        } else if (recipientId == userId) {
+          shouldAdd = true;
+        } else if (userGroups.contains(recipientId)) {
+          shouldAdd = true;
+        }
+
+        if (shouldAdd) {
+          notifications.add(notif);
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
+      return notifications;
+    } catch (e) {
+      // print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+*/
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      // 🔥 FORCE REFRESH ile cache'i atla
+      final rawData = await fetchTableCached(
+        'notifications',
+        forceRefresh: true,
+      );
+      if (rawData.isEmpty) return [];
+
+      print("========== DUYURU FİLTRELEME ==========");
+      print("👤 Kullanıcı ID: '$userId' (${userId.runtimeType})");
+
+      // 🔥 KULLANICI BİLGİLERİ
+      final allUsers = await getUsersCached(forceRefresh: true);
+      final currentUser = allUsers.firstWhere(
+        (u) => u.app.toString() == userId.toString(),
+        orElse: () => Users(
+          app: "",
+          first_name: "",
+          last_name: "",
+          email: "",
+          phone: "",
+          password_hash: "",
+          role: "",
+          profile_photo_url: "",
+          amount: "",
+          b_date: "",
+          created_at: "",
+          last_login: "",
+          is_active: "",
+          branches_id: "",
+        ),
+      );
+
+      print("👤 Kullanıcı Rolü: ${currentUser.role}");
+
+      bool isAdmin =
+          currentUser.role.toLowerCase() == 'admin' ||
+          currentUser.role.toLowerCase() == 'yönetici';
+
+      // 🔥 KULLANICININ GRUPLARI
+      List<String> userGroups = [];
+
+      if (currentUser.role.toLowerCase() == 'student' ||
+          currentUser.role.toLowerCase() == 'öğrenci') {
+        final groupRelations = await getGroupStudentsCached(forceRefresh: true);
+        userGroups = groupRelations
+            .where(
+              (rel) =>
+                  rel.student_id == userId &&
+                  rel.is_active.toString().toUpperCase() == "TRUE",
+            )
+            .map((rel) => rel.groups_id.toString())
+            .toList();
+      } else if (currentUser.role.toLowerCase() == 'coach' ||
+          currentUser.role.toLowerCase() == 'antrenör') {
+        final coaches = await getCoachesCached(forceRefresh: true);
+        final currentCoach = coaches.firstWhere(
+          (c) => c.user_id == userId,
+          orElse: () => Coach(
+            coach_id: "",
+            user_id: "",
+            branches_id: "",
+            sports_id: "",
+            bio: "",
+            certificate_info: "",
+            monthly_salary: "",
+            hired_at: "",
+          ),
+        );
+        if (currentCoach.coach_id.isNotEmpty) {
+          final groups = await getGroupsByCoachCached(
+            currentCoach.coach_id,
+            forceRefresh: true,
+          );
+          userGroups = groups.map((g) => g.groups_id.toString()).toList();
+        }
+      }
+
+      print("📚 Kullanıcı grupları: $userGroups");
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
+        String recipientId = notif['recipient_id']?.toString() ?? '';
+        String groupsId = notif['groups_id']?.toString() ?? '';
+        String title = notif['title']?.toString() ?? '';
+
+        bool shouldAdd = false;
+        String reason = "";
+
+        // 🔥 KRİTİK: recipient_id ve userId'i AYNI TİPE çevir
+        String userIdStr = userId.toString();
+        String recipientIdStr = recipientId.toString();
+
+        print(
+          "🔍 Kontrol: userId='$userIdStr' vs recipientId='$recipientIdStr'",
+        );
+
+        // 1. Herkese açık
+        if (recipientIdStr == 'all' || recipientIdStr == 'Tümü') {
+          shouldAdd = true;
+          reason = "Herkese açık";
+        }
+        // 2. Admin
+        else if (isAdmin) {
+          shouldAdd = true;
+          reason = "Admin yetkisi";
+        }
+        // 3. 🔥🔥🔥 DİREKT KULLANICIYA (EN ÖNEMLİ)
+        else if (recipientIdStr == userIdStr) {
+          shouldAdd = true;
+          reason = "✅ DİREKT KULLANICIYA GÖNDERİLMİŞ!";
+        }
+        // 4. Gruba
+        else if (userGroups.contains(recipientIdStr)) {
+          shouldAdd = true;
+          reason = "Gruba özel";
+        }
+        // 5. groups_id ile
+        else if (groupsId.isNotEmpty && userGroups.contains(groupsId)) {
+          shouldAdd = true;
+          reason = "Gruba özel (groups_id)";
+        }
+
+        print("Duyuru: $title -> recipient_id: '$recipientIdStr'");
+
+        if (shouldAdd) {
+          print("  ✅ $reason");
+          notifications.add(notif);
+        } else {
+          print("  ❌ Eşleşmedi");
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📊 Filtrelenmiş duyuru sayısı: ${notifications.length}");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
+
+  static Future<void> markNotificationAsRead(
+    String notificationId,
+    String userId,
+  ) async {
+    try {
+      print("📢 Bildirim okunuyor - ID: $notificationId");
+
+      final response = await _postRequest({
+        "action": "updateNotification",
+        "notifications_id": notificationId,
+        "is_read": "TRUE",
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          print("✅ Bildirim okundu olarak işaretlendi: $notificationId");
+          invalidateCache('notifications');
+        } else {
+          print("❌ Bildirim güncellenemedi: ${decoded['error']}");
+        }
+      } else {
+        print("❌ HTTP Hatası: ${response?.statusCode}");
+      }
+    } catch (e) {
+      // print("Okundu işaretlenemedi: $e");
+    }
+  }
+
+  static Future<int> getUnreadNotificationCount(String userId) async {
+    final notifications = await getNotificationsForUser(userId);
+    final unreadCount = notifications.where((n) {
+      String isRead = n['is_read']?.toString().toUpperCase() ?? '';
+      return isRead != 'TRUE';
+    }).length;
+
+    // print("📊 Okunmamış bildirim sayısı: $unreadCount");
+    return unreadCount;
+  }
+
+  /*
+  static Future<bool> addNotification(
+    Map<String, dynamic> notificationData,
+  ) async {
+    // print("📢 addNotification çağrıldı");
+    // print("   title: ${notificationData['title']}");
+    // print("   recipient_id: ${notificationData['recipient_id']}");
+
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "notifications",
+      "data": notificationData,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      try {
+        final decoded = jsonDecode(response.body);
+        final success = decoded['success'] == true;
+        if (success) {
+          // print("✅ Bildirim başarıyla eklendi");
+          invalidateCache('notifications');
+        } else {
+          //  print("❌ Bildirim eklenemedi: ${decoded['error']}");
+        }
+        return success;
+      } catch (e) {
+        // print("❌ JSON parse hatası: $e");
+        return false;
+      }
+    }
+    return false;
+  }
+*/
+  static Future<bool> addNotification(
+    Map<String, dynamic> notificationData,
+  ) async {
+    print("📢 addNotification çağrıldı");
+    print("   title: ${notificationData['title']}");
+    print("   recipient_id: ${notificationData['recipient_id']}");
+    print("   groups_id: ${notificationData['groups_id']}");
+
+    // 🔥 groups_id'yi STRING olarak kaydet
+    if (notificationData['groups_id'] != null) {
+      notificationData['groups_id'] = notificationData['groups_id'].toString();
+    }
+
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "notifications",
+      "data": notificationData,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      try {
+        final decoded = jsonDecode(response.body);
+        final success = decoded['success'] == true;
+        if (success) {
+          print("✅ Bildirim başarıyla eklendi");
+          invalidateCache('notifications');
+        } else {
+          print("❌ Bildirim eklenemedi: ${decoded['error']}");
+        }
+        return success;
+      } catch (e) {
+        print("❌ JSON parse hatası: $e");
+        return false;
+      }
+    }
+    return false;
+  }
+
+  static DateTime _parseDateTime(String dateTimeStr) {
+    try {
+      if (dateTimeStr.contains('T')) {
+        return DateTime.parse(dateTimeStr);
+      } else if (dateTimeStr.contains(' ')) {
+        return DateTime.parse(dateTimeStr.replaceAll(' ', 'T'));
+      }
+      return DateTime(2000);
+    } catch (e) {
+      return DateTime(2000);
+    }
+  }
+
+  // =========================================================================
+  // ✅ SMS İLE KOD GÖNDERME
+  // =========================================================================
+
+  static Future<bool> send2FACode(String phoneNumber, String code) async {
+    try {
+      final response = await _postRequest({
+        "action": "send2FACode",
+        "phone": phoneNumber,
+        "code": code,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      // print("SMS gönderme hatası: $e");
       return false;
     }
-  } catch (e) {
-    print("Yoklama Kayıt Hatası: $e");
+  }
+  /*
+  static Future<void> updateLastLogin(String userId) async {
+    try {
+      final users = await getUsersCached();
+      final user = users.firstWhere((u) => u.app == userId);
+
+      final response = await _postRequest({
+        "action": "insert",
+        "table": "users",
+        "data": {
+          "app": user.app,
+          "first_name": user.first_name,
+          "last_name": user.last_name,
+          "email": user.email,
+          "phone": user.phone,
+          "password_hash": user.password_hash,
+          "role": user.role,
+          "profile_photo_url": user.profile_photo_url,
+          "branches_id": user.branches_id,
+          "amount": user.amount,
+          "b_date": user.b_date,
+          "created_at": user.created_at,
+          "last_login": DateTime.now().toIso8601String(),
+          "is_active": user.is_active,
+        },
+      });
+
+      if (response != null && response.statusCode == 200) {
+        // print("✅ Son giriş güncellendi: $userId");
+        invalidateCache('users');
+      }
+    } catch (e) {
+      // print("Güncelleme hatası: $e");
+    }
+  }
+*/
+  // fetch_data_page.dart içindeki updateLastLogin fonksiyonunu BUNUNLA DEĞİŞTİR
+
+  static Future<void> updateLastLogin(String userId) async {
+    try {
+      // 🔥 SADECE last_login sütununu güncelle
+      final response = await _postRequest({
+        "action": "updateLastLogin", // Yeni action
+        "user_id": userId,
+        "last_login": DateTime.now().toIso8601String(),
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          print("✅ Son giriş güncellendi: $userId");
+          // users cache'ini temizle
+          invalidateCache('users');
+        } else {
+          print("❌ Son giriş güncellenemedi: ${decoded['error']}");
+        }
+      } else {
+        print("❌ HTTP Hatası: ${response?.statusCode}");
+      }
+    } catch (e) {
+      print("Güncelleme hatası: $e");
+    }
+  }
+  // =========================================================================
+  // ✅ FOTOĞRAF YÜKLEME
+  // =========================================================================
+
+  static Future<String?> uploadImageToDrive(
+    File imageFile,
+    String fileName,
+  ) async {
+    try {
+      List<int> imageBytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+
+      final response = await _postRequest({
+        "action": "uploadImage",
+        "file_name": fileName,
+        "file_data": base64Image,
+        "folder": "profile_photos",
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          // print("✅ Fotoğraf yüklendi: ${decoded['url']}");
+          return decoded['url'];
+        }
+      }
+      return null;
+    } catch (e) {
+      //    print("Fotoğraf yükleme hatası: $e");
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ KULLANICI İŞLEMLERİ (LOGIN, REGISTER, UPDATE)
+  // =========================================================================
+
+  static Future<Users?> login(String email, String password) async {
+    print("========== LOGIN TEST ==========");
+    print("Email: $email");
+
+    final response = await _postRequest({
+      "action": "login",
+      "email": email,
+      "password": password,
+    });
+
+    // print("Response status: ${response?.statusCode}");
+    // print("Response body: ${response?.body}");
+
+    if (response != null && response.statusCode == 200) {
+      try {
+        final decoded = json.decode(response.body);
+        //   print("Decoded: $decoded");
+
+        if (decoded['success'] == true) {
+          Map<String, dynamic>? userMap;
+
+          if (decoded['data'] != null && decoded['data']['user'] != null) {
+            userMap = Map<String, dynamic>.from(decoded['data']['user']);
+            // print("✅ userMap data.user'dan alındı");
+          } else if (decoded['user'] != null) {
+            userMap = Map<String, dynamic>.from(decoded['user']);
+            // print("✅ userMap user'dan alındı");
+          }
+
+          if (userMap != null) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('logged_user', jsonEncode(userMap));
+
+            // print("✅ Login başarılı! Kullanıcı: ${userMap['email']}");
+            return Users.fromJson(userMap);
+          } else {
+            //  print("❌ userMap oluşturulamadı");
+          }
+        } else {
+          // print("❌ Login başarısız: ${decoded['error']}");
+        }
+      } catch (e) {
+        // print("❌ JSON parse hatası: $e");
+      }
+    } else {
+      // print("❌ HTTP hatası: ${response?.statusCode}");
+    }
+
+    return null;
+  }
+
+  static Future<Users?> loginRequest(String email, String password) async {
+    return await login(email, password);
+  }
+
+  static Future<bool> registerUser(Users newUser) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "users",
+      "data": newUser.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('users');
+      }
+      return success;
+    }
     return false;
   }
-}
-  //-------------------Update Profil-------------------
-static Future<bool> updateProfile(Map<String, dynamic> data, ) async {
-  try {
-    final response = await http.post(
-        Uri.parse(_baseUrl),
-      body: jsonEncode({
-        "action": "updateUser",
-        "data": data,
-      }),
+
+  static Future<bool> updateProfile(Map<String, dynamic> data) async {
+    final response = await _postRequest({"action": "updateUser", "data": data});
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('users');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  static Future<Users?> getSavedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? userJson = prefs.getString('logged_user');
+
+    if (userJson != null) {
+      final Map<String, dynamic> userMap = json.decode(userJson);
+      // print("✅ Kayıtlı kullanıcı bulundu: ${userMap['email']}");
+      return Users.fromJson(userMap);
+    }
+
+    // print("❌ Kayıtlı kullanıcı yok");
+    return null;
+  }
+
+  static Future<bool> deactivateUser(String userId) async {
+    final response = await _postRequest({
+      "action": "deactivateUser",
+      "user_id": userId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('users');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ BRANCH İŞLEMLERİ
+  // =========================================================================
+
+  static Future<Branches?> getBranchById(String branchId) async {
+    final allBranches = await getBranchesCached();
+    try {
+      return allBranches.firstWhere((b) => b.branches_id == branchId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ SPORTS İŞLEMLERİ
+  // =========================================================================
+
+  static Future<Sports?> getSportById(String sportId) async {
+    final allSports = await getSportsCached();
+    try {
+      return allSports.firstWhere((s) => s.sports_id == sportId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // ✅ GRUP İŞLEMLERİ (CACHE'Lİ VERSİYONLAR)
+  // =========================================================================
+
+  static Future<List<Group>> getGroupsByCoachCached(
+    String coachId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByBranchCached(
+    String branchId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+    return allGroups.where((g) => g.branches_id == branchId).toList();
+  }
+
+  static Future<Group?> getGroupByIdCached(
+    String groupId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+    try {
+      return allGroups.firstWhere((g) => g.groups_id == groupId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<GroupStudent>> getGroupStudentsByGroupIdCached(
+    String groupId, {
+    bool forceRefresh = false,
+  }) async {
+    final all = await getGroupStudentsCached(forceRefresh: forceRefresh);
+    return all.where((gs) => gs.groups_id == groupId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByCoachIdCached(
+    String coachId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByStudentIdCached(
+    String studentId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroupRelations = await getGroupStudentsCached(
+      forceRefresh: forceRefresh,
     );
-    return response.statusCode == 200;
-  } catch (e) {
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+
+    final studentGroupIds = allGroupRelations
+        .where((rel) => rel.student_id == studentId && rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    return allGroups
+        .where((g) => studentGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  // =========================================================================
+  // ✅ GRUP İŞLEMLERİ (ORİJİNAL - CACHE'SİZ)
+  // =========================================================================
+
+  static Future<List<Group>> getGroupsByCoach(String coachId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByBranch(String branchId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.branches_id == branchId).toList();
+  }
+
+  static Future<Group?> getGroupById(String groupId) async {
+    final allGroups = await getGroups();
+    try {
+      return allGroups.firstWhere((g) => g.groups_id == groupId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<GroupStudent>> getGroupStudentsByGroupId(
+    String groupId,
+  ) async {
+    final all = await getGroupStudents();
+    return all.where((gs) => gs.groups_id == groupId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByCoachId(String coachId) async {
+    final allGroups = await getGroups();
+    return allGroups.where((g) => g.coach_id == coachId).toList();
+  }
+
+  static Future<List<Group>> getGroupsByStudentId(String studentId) async {
+    final allGroupRelations = await getGroupStudents();
+    final allGroups = await getGroups();
+
+    final studentGroupIds = allGroupRelations
+        .where((rel) => rel.student_id == studentId && rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    return allGroups
+        .where((g) => studentGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  static Future<Users?> getStudentCoach(String studentId) async {
+    final studentGroups = await getGroupsByStudentId(studentId);
+    if (studentGroups.isEmpty) return null;
+
+    final coachId = studentGroups.first.coach_id;
+    final coaches = await getCoachesOnly();
+    try {
+      final coachUser = coaches.firstWhere((c) => c.app == coachId);
+      return coachUser;
+    } catch (e) {
+      // print("Öğrencinin antrenörü bulunamadı: $e");
+      return null;
+    }
+  }
+
+  static Future<bool> updateGroup(
+    String groupId,
+    Map<String, dynamic> updateData,
+  ) async {
+    final response = await _postRequest({
+      "action": "updateGroup",
+      "group_id": groupId,
+      "data": updateData,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('groups');
+      }
+      return success;
+    }
     return false;
   }
+
+  // =========================================================================
+  // ✅ GRUP-ÖĞRENCİ İLİŞKİLERİ (CACHE'Lİ)
+  // =========================================================================
+
+  static Future<List<GroupStudent>> getGroupStudentsByStudentIdCached(
+    String studentId, {
+    bool forceRefresh = false,
+  }) async {
+    final all = await getGroupStudentsCached(forceRefresh: forceRefresh);
+    return all.where((gs) => gs.student_id == studentId).toList();
+  }
+
+  static Future<List<Group>> getActiveGroupsByStudentIdCached(
+    String studentId, {
+    bool forceRefresh = false,
+  }) async {
+    final allGroupRelations = await getGroupStudentsByStudentIdCached(
+      studentId,
+      forceRefresh: forceRefresh,
+    );
+    final activeGroupIds = allGroupRelations
+        .where((rel) => rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    final allGroups = await getGroupsCached(forceRefresh: forceRefresh);
+    return allGroups
+        .where((g) => activeGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  // =========================================================================
+  // ✅ GRUP-ÖĞRENCİ İLİŞKİLERİ (ORİJİNAL)
+  // =========================================================================
+
+  static Future<List<GroupStudent>> getGroupStudentsByStudentId(
+    String studentId,
+  ) async {
+    final all = await getGroupStudents();
+    return all.where((gs) => gs.student_id == studentId).toList();
+  }
+
+  static Future<List<Group>> getActiveGroupsByStudentId(
+    String studentId,
+  ) async {
+    final allGroupRelations = await getGroupStudentsByStudentId(studentId);
+    final activeGroupIds = allGroupRelations
+        .where((rel) => rel.is_active == "TRUE")
+        .map((rel) => rel.groups_id)
+        .toList();
+
+    final allGroups = await getGroups();
+    return allGroups
+        .where((g) => activeGroupIds.contains(g.groups_id))
+        .toList();
+  }
+
+  static Future<bool> assignStudentToGroup(
+    String studentId,
+    String groupId,
+  ) async {
+    final response = await _postRequest({
+      "action": "assignStudentToGroup",
+      "student_id": studentId,
+      "group_id": groupId,
+      "is_active": "TRUE",
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final success = decoded['success'] == true;
+      if (success) {
+        invalidateCache('group_students');
+        invalidateCache('groups');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  static Future<bool> removeStudentFromGroup(
+    String studentId,
+    String groupId,
+  ) async {
+    final response = await _postRequest({
+      "action": "removeStudentFromGroup",
+      "student_id": studentId,
+      "group_id": groupId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final success = decoded['success'] == true;
+      if (success) {
+        invalidateCache('group_students');
+        invalidateCache('groups');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  static Future<bool> assignCoachToGroup(String groupId, String coachId) async {
+    final response = await _postRequest({
+      "action": "assignCoachToGroup",
+      "group_id": groupId,
+      "coach_id": coachId,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final success = decoded['success'] == true;
+      if (success) {
+        invalidateCache('groups');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ COACH İŞLEMLERİ
+  // =========================================================================
+
+  static Future<bool> registerCoach(Coach newCoach) async {
+    final coaches = await getCoachesCached();
+
+    int nextId = 1;
+    if (coaches.isNotEmpty) {
+      final ids = coaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
+      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
+    }
+
+    final updatedCoachData = newCoach.toJson();
+    updatedCoachData['coach_id'] = nextId.toString();
+
+    final success = await insertData("coaches", updatedCoachData);
+    if (success) {
+      invalidateCache('coaches');
+    }
+    return success;
+  }
+
+  static Future<bool> registerCoachWithAutoId(Coach newCoach) async {
+    return await registerCoach(newCoach);
+  }
+
+  static Future<bool> addCoachWithAutoId(Map<String, dynamic> coachData) async {
+    final allCoaches = await getCoachesCached();
+
+    int nextId = 1;
+    if (allCoaches.isNotEmpty) {
+      final ids = allCoaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
+      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
+    }
+
+    coachData['coach_id'] = nextId.toString();
+    final success = await insertData("coaches", coachData);
+    if (success) {
+      invalidateCache('coaches');
+    }
+    return success;
+  }
+
+  // =========================================================================
+  // ✅ YOKLAMA İŞLEMLERİ
+  // =========================================================================
+
+  static Future<List<Attendance>> getAttendancesByStudent(
+    String studentId,
+  ) async {
+    final all = await getAttendancesCached();
+    return all.where((a) => a.student_id == studentId).toList();
+  }
+
+  static Future<bool> saveAttendance(Attendance attendance) async {
+    print(
+      "💾 saveAttendance: Öğrenci=${attendance.student_id}, Tarih=${attendance.attendance_date}, Durum=${attendance.status}",
+    );
+
+    final response = await _postRequest({
+      "action": "saveAttendance",
+      "sheet": "attendances",
+      "data": attendance.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      final success = decoded['success'] == true;
+      if (success) {
+        invalidateCache('attendances');
+      }
+      return success;
+    }
+    //  print("   ❌ Hata: ${response?.statusCode}");
+    return false;
+  }
+
+  static Future<List<Attendance>> getAttendancesForGroup(String groupId) async {
+    final all = await getAttendancesCached();
+    return all.where((a) => a.groups_id == groupId).toList();
+  }
+
+  static Future<List<Attendance>> getTodayAttendance(String groupId) async {
+    final allAttendances = await getAttendancesForGroup(groupId);
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    return allAttendances
+        .where((a) => a.attendance_date.contains(today))
+        .toList();
+  }
+
+  static Future<bool> saveBulkAttendance(List<Attendance> attendances) async {
+    bool allSuccess = true;
+    for (var att in attendances) {
+      final success = await saveAttendance(att);
+      if (!success) allSuccess = false;
+    }
+    return allSuccess;
+  }
+
+  // =========================================================================
+  // ✅ ÖDEME İŞLEMLERİ
+  // =========================================================================
+
+  static Future<List<Payment>> getPaymentsByStudent(String studentId) async {
+    final allPayments = await getPaymentsCached();
+    return allPayments.where((p) => p.student_id == studentId).toList();
+  }
+
+  static Future<bool> addPayment(Payment payment) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "payments",
+      "data": payment.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('payments');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ ÖĞRENCİ NOTLARI İŞLEMLERİ
+  // =========================================================================
+
+  static Future<List<StudentNote>> getStudentNotes() async {
+    final rawData = await fetchTable("student_notes");
+    return rawData.map((item) => StudentNote.fromJson(item)).toList();
+  }
+
+  static Future<List<StudentNote>> getStudentNotesByStudent(
+    String studentId,
+  ) async {
+    final all = await getStudentNotes();
+    return all.where((n) => n.student_id == studentId).toList();
+  }
+
+  static Future<bool> addStudentNote(StudentNote note) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": "student_notes",
+      "data": note.toJson(),
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('student_notes');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ VELİ-ÖĞRENCİ İLİŞKİLERİ
+  // =========================================================================
+
+  static Future<List<ParentStudent>> getParentStudents() async {
+    final rawData = await fetchTable("parent_student");
+    return rawData.map((item) => ParentStudent.fromJson(item)).toList();
+  }
+
+  static Future<List<ParentStudent>> getStudentsByParent(
+    String parentId,
+  ) async {
+    final all = await getParentStudents();
+    return all.where((ps) => ps.parent_id == parentId).toList();
+  }
+
+  static Future<List<ParentStudent>> getParentsByStudent(
+    String studentId,
+  ) async {
+    final all = await getParentStudents();
+    return all.where((ps) => ps.student_id == studentId).toList();
+  }
+
+  static Future<bool> addParentStudent(
+    String parentId,
+    String studentId,
+  ) async {
+    final success = await insertData("parent_student", {
+      "parent_id": parentId,
+      "student_id": studentId,
+    });
+    if (success) {
+      invalidateCache('parent_student');
+    }
+    return success;
+  }
+
+  // =========================================================================
+  // ✅ GENEL VERİ EKLEME (CACHE'Lİ)
+  // =========================================================================
+
+  static Future<bool> insertData(
+    String tableName,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _postRequest({
+      "action": "insert",
+      "table": tableName,
+      "data": data,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache(tableName);
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ MASTER KAYIT
+  // =========================================================================
+
+  static Future<bool> registerEverywhere(Map<String, dynamic> allInfo) async {
+    final response = await _postRequest({
+      "action": "registerEverywhere",
+      "data": allInfo,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateAllCache();
+      }
+      return success;
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // ✅ ÖDEME BİLDİRİMİ GÖNDER (KİŞİYE ÖZEL)
+  // =========================================================================
+
+  static Future<bool> sendPaymentReminderToStudent(
+    String studentId,
+    String studentName,
+    double amount,
+    String dueDate,
+  ) async {
+    final notifData = {
+      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
+      "sender_id": "Admin",
+      "recipient_id": studentId,
+      "groups_id": "",
+      "title": "💰 Ödeme Hatırlatması",
+      "message":
+          "Sayın $studentName, $dueDate tarihinde sona eren $amount TL aidat ödemeniz bulunmaktadır. Lütfen en kısa sürede ödemenizi gerçekleştiriniz.",
+      "type": "payment_reminder",
+      "is_read": "FALSE",
+      "sent_at": DateTime.now().toIso8601String(),
+    };
+
+    return await addNotification(notifData);
+  }
+
+  static Future<int> sendPaymentRemindersToAllLateStudents() async {
+    try {
+      final allPayments = await getPaymentsCached();
+      final allStudents = await getStudentsOnlyCached();
+      final today = DateTime.now();
+
+      final latePayments = allPayments.where((p) {
+        final dueDate = DateTime.tryParse(p.due_date);
+        final isLate = dueDate != null && dueDate.isBefore(today);
+        final isNotPaid = p.status?.toLowerCase() != 'paid';
+        return isLate && isNotPaid;
+      }).toList();
+
+      int sentCount = 0;
+
+      for (var payment in latePayments) {
+        final student = allStudents.firstWhere(
+          (s) => s.app.toString() == payment.student_id,
+          orElse: () => Users(
+            app: "",
+            branches_id: "",
+            first_name: "Öğrenci",
+            last_name: "",
+            email: "",
+            phone: "",
+            password_hash: "",
+            role: "",
+            profile_photo_url: "",
+            amount: "",
+            b_date: "",
+            created_at: "",
+            last_login: "",
+            is_active: "",
+          ),
+        );
+
+        final success = await sendPaymentReminderToStudent(
+          payment.student_id,
+          "${student.first_name} ${student.last_name}",
+          double.tryParse(payment.amount) ?? 0,
+          payment.due_date,
+        );
+
+        if (success) sentCount++;
+      }
+
+      print("✅ Ödeme bildirimi gönderildi: $sentCount öğrenciye");
+      return sentCount;
+    } catch (e) {
+      print("❌ Ödeme bildirimi gönderilemedi: $e");
+      return 0;
+    }
+  }
+
+  static Future<bool> sendAnnouncementToStudent(
+    String studentId,
+    String title,
+    String message,
+  ) async {
+    final notifData = {
+      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
+      "sender_id": "Admin",
+      "recipient_id": studentId,
+      "groups_id": "",
+      "title": title,
+      "message": message,
+      "type": "announcement",
+      "is_read": "FALSE",
+      "sent_at": DateTime.now().toIso8601String(),
+    };
+
+    return await addNotification(notifData);
+  }
+
+  // =========================================================================
+  // ✅ YARDIMCI METODLAR
+  // =========================================================================
+
+  Future<String> loadJsonAsset(String fileName) async {
+    return await rootBundle.loadString('assets/data/$fileName.json');
+  }
+  // fetch_data_page.dart içine ekle (getUsersCached'in yanına)
+
+  // fetch_data_page.dart içine ekle (getUsersCached'in yanına)
+
+  static Future<Users?> getUserById(String userId) async {
+    final allUsers = await getUsersCached();
+    try {
+      return allUsers.firstWhere((u) => u.app == userId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // 🔥 Kullanıcının FCM token'ını kaydet (e-tabloya)
+  static Future<bool> saveUserToken(String userId, String token) async {
+    try {
+      final response = await _postRequest({
+        "action": "saveUserToken",
+        "user_id": userId,
+        "fcm_token": token,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print("Token kaydedilemedi: $e");
+      return false;
+    }
+  }
+
+  // 🔥 Kullanıcının token'ını al (e-tablodan)
+  static Future<String?> getUserToken(String userId) async {
+    try {
+      final response = await _postRequest({
+        "action": "getUserToken",
+        "user_id": userId,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded['token'];
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // 🔥 Grubun tüm kullanıcılarının token'larını al
+  static Future<List<String>> getGroupUserTokens(String groupId) async {
+    try {
+      final response = await _postRequest({
+        "action": "getGroupUserTokens",
+        "group_id": groupId,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return List<String>.from(decoded['tokens'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 🔥 PUSH NOTIFICATION GÖNDER
+  static Future<bool> sendPushNotification(
+    String title,
+    String body,
+    List<String> tokens, {
+    Map<String, dynamic>? data,
+  }) async {
+    if (tokens.isEmpty) return false;
+
+    try {
+      final response = await _postRequest({
+        "action": "sendPushNotifications",
+        "tokens": tokens,
+        "title": title,
+        "body": body,
+        "data": data ?? {},
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print("Push notification gönderilemedi: $e");
+      return false;
+    }
+  }
 }
-}
-//--------------------------------------------------------------------

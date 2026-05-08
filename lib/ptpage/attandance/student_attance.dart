@@ -1,67 +1,18 @@
-/*import 'package:flutter/material.dart';
-import 'package:my_app/ptpage/student_models.dart';
-
-
-class StudentYoklamaPage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Yoklama Detayı"), backgroundColor: Colors.white),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _ozetKutu("Toplam Katılım", "%${mevcutOgrenci.yoklamaOrani.toInt()}", Icons.done_all, Colors.green),
-            SizedBox(height: 20),
-            _bilgiKart("Öğrenci Bilgileri", [
-              _satir("TC No", mevcutOgrenci.tcNo),
-              _satir("Branş", mevcutOgrenci.brans),
-              _satir("Grup", mevcutOgrenci.grup),
-            ]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _ozetKutu(String t, String v, IconData i, Color c) {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: c)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t), Text(v, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: c))]),
-          Icon(i, size: 40, color: c),
-        ],
-      ),
-    );
-  }
-
-  Widget _bilgiKart(String baslik, List<Widget> icerik) {
-    return Card(child: Padding(padding: EdgeInsets.all(15), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(baslik, style: TextStyle(fontWeight: FontWeight.bold)), Divider(), ...icerik])));
-  }
-
-  Widget _satir(String l, String v) => Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(l), Text(v, style: TextStyle(fontWeight: FontWeight.bold))]));
-}
-*/
-//BU KOÇ SAYFASI KISMINA GEÇECEK SADECE DENEME AMAÇLI
+/*
 import 'package:flutter/material.dart';
 import 'package:my_app/datapage/fetch_data_page.dart';
-import 'package:my_app/ptpage/attandance/attandance_model.dart';
+import 'package:my_app/datapage/data_page/data.dart';
 
 class StudentYoklamaPage extends StatefulWidget {
   final String studentId;
-
-  StudentYoklamaPage({required this.studentId});
+  const StudentYoklamaPage({super.key, required this.studentId});
 
   @override
-  _StudentYoklamaPageState createState() => _StudentYoklamaPageState();
+  State<StudentYoklamaPage> createState() => _StudentYoklamaPageState();
 }
 
 class _StudentYoklamaPageState extends State<StudentYoklamaPage> {
-  // Kanka burayı dynamic yerine Attendance yapalım ki kafası karışmasın
-  List<Attendance> attendances = []; 
+  List<Attendance> attendances = [];
   bool isLoading = true;
 
   @override
@@ -71,109 +22,376 @@ class _StudentYoklamaPageState extends State<StudentYoklamaPage> {
   }
 
   Future<void> _fetchData() async {
+    if (!mounted) return;
     setState(() => isLoading = true);
-    // Servis zaten List<Attendance> döndürüyor
     var data = await GoogleSheetService.getAttendances(widget.studentId);
-    setState(() {
-      attendances = data;
-      isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        attendances = data
+            .where((a) => a.studentId == widget.studentId)
+            .toList();
+        isLoading = false;
+      });
+    }
   }
 
   void _addAttendance(String status) async {
-    var newRecord = Attendance(
-      attendanceId: "ATT-${DateTime.now().millisecondsSinceEpoch}",
-      studentId: widget.studentId,
-      date: "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}",
-      status: status, 
-      notes: 'Mobil Uygulama',
-    );
+    var newRecord = {
+      "attendance_id": "ATT-${DateTime.now().millisecondsSinceEpoch}",
+      "student_id": widget.studentId,
+      "attendance_date":
+          "${DateTime.now().year}-${DateTime.now().month}-${DateTime.now().day}",
+      "status": status == "Geldi" ? "true" : "false",
+      "notes": 'Mobil Uygulama',
+      "group_id": "GR-01",
+      "taken_by": "Coach-Admin",
+    };
 
-    bool success = await GoogleSheetService.saveAttendance(newRecord);
+    bool success = await GoogleSheetService.saveAttendance(
+      Attendance.fromJson(newRecord),
+    );
     if (success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Yoklama kaydedildi!")));
-        _fetchData();
-      }
+      _fetchData();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Başarıyla İşlendi!"),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ DÜZELTME: a['status'] yerine a.status (Nokta kullandık)
-    int presentCount = attendances.where((a) => a.status.toLowerCase() == "geldi").length;
-    double ratio = attendances.isEmpty ? 0 : (presentCount / attendances.length) * 100;
+    int presentCount = attendances.where((a) => a.status == true).length;
+    double ratio = attendances.isEmpty
+        ? 0
+        : (presentCount / attendances.length) * 100;
 
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text("Öğrenci: ${widget.studentId}"), 
-        backgroundColor: Colors.white, 
-        foregroundColor: Colors.black,
+        title: const Text("Yoklama Takibi"),
+        centerTitle: true,
         elevation: 0,
       ),
-      body: isLoading 
-        ? Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: EdgeInsets.all(20),
-            child: Column(
-              children: [
-                _kart("Katılım Oranı", "%${ratio.toInt()}", Icons.analytics, Colors.blue),
-                SizedBox(height: 20),
-                _listeKart("Geçmiş Yoklamalar", attendances),
-              ],
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _fetchData,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    _buildHeaderCard(ratio, presentCount, attendances.length),
+                    const SizedBox(height: 25),
+                    _buildAttendanceList(),
+                  ],
+                ),
+              ),
             ),
-          ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showDialog(),
-        label: Text("Yoklama Al"),
-        icon: Icon(Icons.add),
+        onPressed: _showAttendanceDialog,
+        label: const Text("Yeni Kayıt"),
+        icon: const Icon(Icons.add_task),
       ),
     );
   }
 
-  void _showDialog() {
-    showDialog(context: context, builder: (context) => AlertDialog(
-      title: Text("Öğrenci Geldi mi?"),
-      actions: [
-        TextButton(onPressed: () { _addAttendance("Gelmedi"); Navigator.pop(context); }, child: Text("HAYIR", style: TextStyle(color: Colors.red))),
-        ElevatedButton(onPressed: () { _addAttendance("Geldi"); Navigator.pop(context); }, child: Text("EVET")),
-      ],
-    ));
-  }
-
-  Widget _kart(String t, String v, IconData i, Color c) {
+  // SENİN TASARIMIN BURADA KANKA:
+  Widget _buildHeaderCard(double ratio, int present, int total) {
     return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t), Text(v, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: c))]),
-        Icon(i, size: 40, color: c),
-      ]),
+      width: double.infinity,
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.indigo[400]!, Colors.indigo[700]!],
+        ),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Katılım Performansı",
+                style: TextStyle(color: Colors.white70),
+              ),
+              Text(
+                "%${ratio.toInt()}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                "$total Antrenman / $present Katılım",
+                style: const TextStyle(color: Colors.white54),
+              ),
+            ],
+          ),
+          CircularProgressIndicator(
+            value: ratio / 100,
+            color: Colors.white,
+            backgroundColor: Colors.white12,
+          ),
+        ],
+      ),
     );
   }
 
-  // ✅ DÜZELTME: Liste tipi Attendance oldu
-  Widget _listeKart(String baslik, List<Attendance> liste) {
+  Widget _buildAttendanceList() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: attendances.length,
+      itemBuilder: (context, index) {
+        final a = attendances[index];
+        return Card(
+          child: ListTile(
+            leading: Icon(
+              a.status ? Icons.check : Icons.close,
+              color: a.status ? Colors.green : Colors.red,
+            ),
+            title: Text(a.date),
+            trailing: Text(
+              a.status ? "Geldi" : "Gelmedi",
+              style: TextStyle(color: a.status ? Colors.green : Colors.red),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAttendanceDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (c) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _addAttendance("Geldi"),
+                child: const Text("GELDİ"),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _addAttendance("Gelmedi"),
+                child: const Text("GELMEDİ"),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+*/
+import 'package:flutter/material.dart';
+import 'package:my_app/datapage/fetch_data_page.dart';
+import 'package:my_app/datapage/data_page/data.dart';
+
+class StudentYoklamaPage extends StatefulWidget {
+  final String studentId;
+  const StudentYoklamaPage({super.key, required this.studentId});
+
+  @override
+  State<StudentYoklamaPage> createState() => _StudentYoklamaPageState();
+}
+
+class _StudentYoklamaPageState extends State<StudentYoklamaPage> {
+  List<Attendance> attendances = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    if (!mounted) return;
+    setState(() => isLoading = true);
+
+    final allAttendances = await GoogleSheetService.getAttendances();
+    final filtered = allAttendances
+        .where((a) => a.student_id == widget.studentId)
+        .toList();
+
+    if (mounted) {
+      setState(() {
+        attendances = filtered;
+        isLoading = false;
+      });
+    }
+  }
+
+  void _addAttendance(String status) async {
+    final now = DateTime.now();
+    final formattedDate =
+        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+    final newAttendance = Attendance(
+      attendances_id: "",
+      groups_id: "GR-01",
+      student_id: widget.studentId,
+      taken_by: "Coach-Admin",
+      attendance_date: formattedDate,
+      status: status == "Geldi" ? "TRUE" : "FALSE",
+      note: "Mobil Uygulama",
+    );
+
+    bool success = await GoogleSheetService.saveAttendance(newAttendance);
+
+    if (success) {
+      _fetchData();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Başarıyla İşlendi!"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    int presentCount = attendances.where((a) => a.status == "TRUE").length;
+    double ratio = attendances.isEmpty
+        ? 0
+        : (presentCount / attendances.length) * 100;
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text("Yoklama Takibi"),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _fetchData,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    _buildHeaderCard(ratio, presentCount, attendances.length),
+                    const SizedBox(height: 25),
+                    _buildAttendanceList(),
+                  ],
+                ),
+              ),
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showAttendanceDialog,
+        label: const Text("Yeni Kayıt"),
+        icon: const Icon(Icons.add_task),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(double ratio, int present, int total) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(baslik, style: TextStyle(fontWeight: FontWeight.bold)),
-        Divider(),
-        if (liste.isEmpty) Text("Kayıt yok."),
-        // ✅ DÜZELTME: a['date'] yerine a.date kullandık
-        ...liste.map((a) => Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.indigo[400]!, Colors.indigo[700]!],
+        ),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(a.date), 
-              Text(a.status, style: TextStyle(fontWeight: FontWeight.bold, color: a.status.toLowerCase() == "geldi" ? Colors.green : Colors.red))
-            ]
+              const Text(
+                "Katılım Performansı",
+                style: TextStyle(color: Colors.white70),
+              ),
+              Text(
+                "%${ratio.toInt()}",
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                "$total Antrenman / $present Katılım",
+                style: const TextStyle(color: Colors.white54),
+              ),
+            ],
           ),
-        )).toList()
-      ]),
+          CircularProgressIndicator(
+            value: ratio / 100,
+            color: Colors.white,
+            backgroundColor: Colors.white12,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceList() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: attendances.length,
+      itemBuilder: (context, index) {
+        final a = attendances[index];
+        final isPresent = a.status == "TRUE";
+
+        return Card(
+          child: ListTile(
+            leading: Icon(
+              isPresent ? Icons.check : Icons.close,
+              color: isPresent ? Colors.green : Colors.red,
+            ),
+            title: Text(a.attendance_date),
+            trailing: Text(
+              isPresent ? "Geldi" : "Gelmedi",
+              style: TextStyle(color: isPresent ? Colors.green : Colors.red),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAttendanceDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (c) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _addAttendance("Geldi"),
+                child: const Text("GELDİ"),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => _addAttendance("Gelmedi"),
+                child: const Text("GELMEDİ"),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

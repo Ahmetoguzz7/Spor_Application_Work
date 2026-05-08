@@ -1,84 +1,160 @@
 import 'package:flutter/material.dart';
-import 'package:my_app/datapage/fetch_data_page.dart'; // GoogleSheetService'in olduğu dosya yolu
+import 'package:my_app/datapage/data_page/data.dart';
+import 'package:my_app/datapage/fetch_data_page.dart';
+import 'package:my_app/main.dart';
+import 'package:my_app/parent/parent_page.dart';
+import 'package:my_app/ptpage/studenonboarda/student_onboarding.dart';
+import 'package:my_app/ptpage/student_interface.dart';
+import 'package:my_app/ptpage/user_sign_up.dart/student_signup.dart';
+import 'package:my_app/userInterfacepage/userinterface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class SignUpPage extends StatefulWidget {
-  const SignUpPage({super.key});
+class StudentLogin extends StatefulWidget {
+  const StudentLogin({super.key});
 
   @override
-  State<SignUpPage> createState() => _SignUpPageState();
+  State<StudentLogin> createState() => _StudentLoginState();
 }
 
-class _SignUpPageState extends State<SignUpPage> {
-  final _formKey = GlobalKey<FormState>();
-  
-  // Controller'lar - Sheets'teki kolon isimleriyle uyumlu
-  final nameController = TextEditingController();
-  final surnameController = TextEditingController();
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  final phoneController = TextEditingController();
-  final ageController = TextEditingController();
+class _StudentLoginState extends State<StudentLogin>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
 
-  String selectedRole = 'student'; // Varsayılan rol
-  bool isLoading = false; // Yükleme durumu kontrolü
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
 
-  // --- KAYIT İŞLEMİ ---
-  void _handleRegister() async {
-    if (_formKey.currentState!.validate()) {
-      // 1. İşlem başladı, butonda çark dönecek
-      setState(() => isLoading = true);
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+    _controller.forward();
+  }
 
-      // Sheets kolon başlıklarıyla aynı Map yapısı
-      Map<String, dynamic> allData = {
-        "user_name": nameController.text.trim(),
-        "user_sur_name": surnameController.text.trim(),
-        "email": emailController.text.trim(),
-        "password_hash": passwordController.text.trim(),
-        "role": selectedRole,
-        "phone": phoneController.text.trim(),
-        "age": ageController.text.trim(),
-        "created_at": DateTime.now().toString().substring(0, 19),
-      };
+  @override
+  void dispose() {
+    _controller.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
-      // 2. Google Sheets'e veriyi gönder (Apps Script'teki Master fonksiyonu çalışır)
-      bool success = await GoogleSheetService.registerEverywhere(allData);
+  Future<void> _navigateToNextScreen(Users loggedUser) async {
+    final prefs = await SharedPreferences.getInstance();
+    final String role = loggedUser.role.toLowerCase();
 
-      if (success) {
-        // 3. Başarılı mesajını göster
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text("Kayıt Başarıyla Sisteme İşlendi!"),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
+    if (!mounted) return;
 
-        // 4. 2 saniye bekle ki kullanıcı kaydedildiğini ve çarkın döndüğünü görsün
-        await Future.delayed(const Duration(seconds: 2));
+    if (role == 'parent' || role == 'veli') {
+      await prefs.setBool('onboarding_done_${loggedUser.app}', true);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => VeliAnaSayfa(veli: loggedUser)),
+      );
+    } else if (role == 'student' || role == 'öğrenci') {
+      bool isCompleted =
+          prefs.getBool('onboarding_done_${loggedUser.app}') ?? false;
 
-        if (mounted) {
-          setState(() => isLoading = false); // İşlem bitti
-          Navigator.pop(context); // Login sayfasına geri dön
-        }
+      if (isCompleted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => UserInterface(user: loggedUser)),
+        );
       } else {
-        // Hata durumu
-        setState(() => isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Hata! Veri sisteme işlenemedi."),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => UserInterface(user: loggedUser)),
+        );
+      }
+    } else if (role == 'coach' || role == 'antrenör') {
+      await prefs.setBool('onboarding_done_${loggedUser.app}', true);
+
+      final allCoaches = await GoogleSheetService.getCoaches();
+      final allSports = await GoogleSheetService.getSports();
+
+      Coach existingCoach = allCoaches.firstWhere(
+        (c) => c.user_id == loggedUser.app,
+        orElse: () => Coach(
+          coach_id: "",
+          user_id: loggedUser.app,
+          branches_id: loggedUser.branches_id,
+          sports_id: "1",
+          bio: "",
+          certificate_info: "",
+          monthly_salary: "0",
+          hired_at: DateTime.now().toIso8601String(),
+        ),
+      );
+
+      Sports sport = allSports.isNotEmpty
+          ? allSports.first
+          : Sports(sports_id: "1", name: "Genel Branş", description: "");
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PersonalTrainer(
+            users: loggedUser,
+            sport: sport,
+            coachData: existingCoach,
+            tumGruplar: [],
+            tumKullanicilar: [],
+            tumOdemeler: [],
+          ),
+        ),
+      );
+    } else {
+      await prefs.setBool('onboarding_done_${loggedUser.app}', true);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => UserInterface(user: loggedUser)),
+      );
+    }
+  }
+
+  Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Lütfen tüm alanları doldurun!")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final Users? loggedUser = await GoogleSheetService.login(email, password);
+
+      print("Giriş sonucu: ${loggedUser != null ? loggedUser.email : "null"}");
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (loggedUser != null) {
+        await _navigateToNextScreen(loggedUser);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Hatalı email veya şifre!")),
+        );
+      }
+    } catch (e) {
+      print("Giriş hatası: $e");
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Giriş hatası: $e")));
       }
     }
   }
@@ -86,100 +162,143 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Yeni Sporcu Kaydı")),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const Hero(
-                tag: "logo",
-                child: Icon(Icons.fitness_center, size: 80, color: Colors.blue),
-              ),
-              const SizedBox(height: 20),
-              
-              _inputField(nameController, "Adınız", Icons.person),
-              _inputField(surnameController, "Soyadınız", Icons.person_outline),
-              _inputField(emailController, "E-posta", Icons.email),
-              _inputField(passwordController, "Şifre", Icons.lock, isPassword: true),
-              _inputField(phoneController, "Telefon No", Icons.phone, inputType: TextInputType.phone),
-              _inputField(ageController, "Yaş", Icons.calendar_today, inputType: TextInputType.number),
-              
-              const SizedBox(height: 20),
-              const Text("Kullanıcı Rolü Seçin:", style: TextStyle(fontWeight: FontWeight.bold)),
-              
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Radio(
-                    value: 'student',
-                    groupValue: selectedRole,
-                    onChanged: (val) => setState(() => selectedRole = val.toString()),
-                  ),
-                  const Text("Öğrenci"),
-                  const SizedBox(width: 20),
-                  Radio(
-                    value: 'koc',
-                    groupValue: selectedRole,
-                    onChanged: (val) => setState(() => selectedRole = val.toString()),
-                  ),
-                  const Text("Koç"),
-                ],
-              ),
-
-              const SizedBox(height: 40),
-
-              // --- KAYIT BUTONU (ANIMASYONLU) ---
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  ),
-                  // Eğer işlem sürüyorsa butonu inaktif yapıyoruz
-                  onPressed: isLoading ? null : _handleRegister,
-                  child: isLoading 
-                    ? const SizedBox(
-                        height: 25,
-                        width: 25,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                        ),
-                      )
-                    : const Text(
-                        "KAYIT OL VE SİSTEME İŞLE",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset("assets/images/6272.jpg", fit: BoxFit.cover),
+          ),
+          Container(color: Colors.black.withOpacity(0.55)),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: Container(
+                  padding: const EdgeInsets.all(25),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 15,
+                        spreadRadius: 5,
                       ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircleAvatar(
+                        radius: 40,
+                        backgroundColor: Colors.orangeAccent,
+                        child: Icon(
+                          Icons.sports_basketball,
+                          size: 40,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        "Spor Akademi",
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        "Sisteme erişmek için giriş yapınız",
+                        style: TextStyle(color: Colors.black54),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 30),
+                      _buildTextField(
+                        _emailController,
+                        "Email / Telefon",
+                        Icons.email_outlined,
+                      ),
+                      const SizedBox(height: 15),
+                      _buildTextField(
+                        _passwordController,
+                        "Şifre",
+                        Icons.lock_outline,
+                        isPassword: true,
+                      ),
+                      const SizedBox(height: 30),
+                      _buildLoginButton(),
+                      const SizedBox(height: 15),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text("Hesabın yok mu? "),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(builder: (_) => SignUpPage()),
+                              );
+                            },
+                            child: const Text(
+                              "Kayıt Ol",
+                              style: TextStyle(color: Colors.orangeAccent),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool isPassword = false,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: isPassword,
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: Colors.orangeAccent),
+        labelText: label,
+        filled: true,
+        fillColor: Colors.grey.shade100,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
         ),
       ),
     );
   }
 
-  // --- ORTAK INPUT TASARIMI ---
-  Widget _inputField(TextEditingController controller, String label, IconData icon, {bool isPassword = false, TextInputType inputType = TextInputType.text}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
-      child: TextFormField(
-        controller: controller,
-        obscureText: isPassword,
-        keyboardType: inputType,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          filled: true,
-          fillColor: Colors.grey[100],
+  Widget _buildLoginButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.orangeAccent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
         ),
-        validator: (v) => v!.isEmpty ? "Bu alan boş bırakılamaz" : null,
+        onPressed: _isLoading ? null : _handleLogin,
+        child: _isLoading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : const Text(
+                "Giriş Yap",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
       ),
     );
   }
