@@ -222,17 +222,7 @@ class _UserInterfaceState extends State<UserInterface> {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => isParent
-            ? Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SignUpPage()),
-              )
-            : _veliBaglamaDialog(),
-        backgroundColor: Colors.orange[800],
-        icon: const Icon(Icons.person_add, color: Colors.white),
-        label: Text(isParent ? "Çocuk Ekle" : "Veliye Bağlan"),
-      ),
+
       body: isLoading || isLoadingPaymentData
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -600,13 +590,7 @@ class _UserInterfaceState extends State<UserInterface> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Row(
-            children: [
-              Icon(Icons.link, color: Colors.orange[800]),
-              const SizedBox(width: 10),
-              const Text("Veliye Bağlan"),
-            ],
-          ),
+
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
