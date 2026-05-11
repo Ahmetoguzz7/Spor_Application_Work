@@ -18,56 +18,16 @@ class GrupListesiSayfasi extends StatefulWidget {
 }
 
 class _GrupListesiSayfasiState extends State<GrupListesiSayfasi> {
-  List<Group> gruplar = [];
-  bool isLoading = true;
-  String? errorMessage;
-  Map<String, bool> todayAttendanceStatus = {};
+  late Future<List<Group>> _groupsFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadGroupsAndAttendance();
+    _groupsFuture = _loadGroups();
   }
 
-  Future<void> _loadGroupsAndAttendance() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      final groups = await GoogleSheetService.getGroupsByCoach(
-        widget.coache.coach_id,
-      );
-      gruplar = groups;
-
-      final today = DateTime.now();
-      final formattedToday =
-          "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
-
-      for (var grup in gruplar) {
-        final attendances = await GoogleSheetService.getAttendancesForGroup(
-          grup.groups_id,
-        );
-        final todayAttendance = attendances.any(
-          (a) => a.attendance_date == formattedToday,
-        );
-        todayAttendanceStatus[grup.groups_id] = todayAttendance;
-      }
-
-      setState(() {
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _refreshData() async {
-    await _loadGroupsAndAttendance();
+  Future<List<Group>> _loadGroups() async {
+    return await GoogleSheetService.getGroupsByCoach(widget.coache.coach_id);
   }
 
   String _getGroupTime(String schedule) {
@@ -91,56 +51,121 @@ class _GrupListesiSayfasiState extends State<GrupListesiSayfasi> {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshData,
-            tooltip: "Yenile",
-          ),
-        ],
       ),
       body: RefreshIndicator(
-        onRefresh: _refreshData,
-        child: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : errorMessage != null
-            ? _buildErrorWidget()
-            : gruplar.isEmpty
-            ? _buildEmptyWidget()
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: gruplar.length,
-                itemBuilder: (context, index) {
-                  final grup = gruplar[index];
-                  final hasAttendanceToday =
-                      todayAttendanceStatus[grup.groups_id] ?? false;
-                  return _buildGroupCard(grup, hasAttendanceToday);
-                },
-              ),
+        onRefresh: () async {
+          setState(() {
+            _groupsFuture = _loadGroups();
+          });
+          await _groupsFuture;
+        },
+        child: FutureBuilder<List<Group>>(
+          future: _groupsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.indigo),
+                    SizedBox(height: 16),
+                    Text("Gruplar yükleniyor..."),
+                  ],
+                ),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Colors.red.shade300,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text("Bir hata oluştu"),
+                    const SizedBox(height: 8),
+                    Text(snapshot.error.toString()),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _groupsFuture = _loadGroups();
+                        });
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text("Tekrar Dene"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final gruplar = snapshot.data ?? [];
+
+            if (gruplar.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.group_off,
+                        size: 64,
+                        color: Colors.grey.shade400,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      "Henüz size atanmış bir grup bulunamadı",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Yöneticiniz sizi bir gruba atayınca burada görünecektir",
+                      style: TextStyle(color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: gruplar.length,
+              itemBuilder: (context, index) {
+                final grup = gruplar[index];
+                return _buildGroupCard(grup);
+              },
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildGroupCard(Group grup, bool hasAttendanceToday) {
+  Widget _buildGroupCard(Group grup) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
       child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
           onTap: () {
-            // 🔥🔥🔥 DÜZELTİLMİŞ NAVIGASYON 🔥🔥🔥
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -149,272 +174,101 @@ class _GrupListesiSayfasiState extends State<GrupListesiSayfasi> {
                   currentUser: widget.user,
                 ),
               ),
-            ).then((_) => _refreshData());
+            );
           },
-          child: Padding(
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Colors.indigo, Colors.indigoAccent],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                // Grup ikonu
+                Container(
+                  width: 55,
+                  height: 55,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Colors.indigo, Colors.indigoAccent],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.group, color: Colors.white, size: 28),
+                ),
+                const SizedBox(width: 16),
+                // Bilgiler
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        grup.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
                         ),
-                        borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(
-                        Icons.sports_basketball,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            grup.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.schedule,
-                                size: 10,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                _getGroupTime(grup.schedule),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Icon(
-                                Icons.people,
-                                size: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                "Kapasite: ${grup.capacity}",
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: hasAttendanceToday
-                            ? Colors.green.shade100
-                            : Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 4),
+                      Row(
                         children: [
                           Icon(
-                            hasAttendanceToday
-                                ? Icons.check_circle
-                                : Icons.warning_amber,
-                            size: 16,
-                            color: hasAttendanceToday
-                                ? Colors.green
-                                : Colors.orange,
+                            Icons.schedule,
+                            size: 14,
+                            color: Colors.grey.shade500,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            hasAttendanceToday
-                                ? "Yoklama alındı"
-                                : "Yoklama alınmadı",
+                            _getGroupTime(grup.schedule),
                             style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              color: hasAttendanceToday
-                                  ? Colors.green
-                                  : Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    _buildInfoChip(
-                      Icons.calendar_today,
-                      grup.schedule,
-                      Colors.indigo.shade100,
-                      Colors.indigo,
-                    ),
-                    const SizedBox(width: 8),
-                    _buildInfoChip(
-                      Icons.payments,
-                      "${grup.monthly_fee} TL",
-                      Colors.green.shade100,
-                      Colors.green,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.indigo.shade50,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        children: [
-                          Text(
-                            "Yoklama Al",
-                            style: TextStyle(
-                              color: Colors.indigo,
-                              fontWeight: FontWeight.w500,
                               fontSize: 12,
+                              color: Colors.grey.shade600,
                             ),
                           ),
-                          SizedBox(width: 4),
+                          const SizedBox(width: 12),
                           Icon(
-                            Icons.arrow_forward,
+                            Icons.payments,
                             size: 14,
-                            color: Colors.indigo,
+                            color: Colors.grey.shade500,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "${grup.monthly_fee} TL",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade600,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+                // Ok butonu
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.indigo,
+                  ),
                 ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildInfoChip(
-    IconData icon,
-    String label,
-    Color bgColor,
-    Color iconColor,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: iconColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: iconColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
-          const SizedBox(height: 16),
-          Text(
-            "Bir hata oluştu",
-            style: TextStyle(fontSize: 18, color: Colors.grey.shade700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            errorMessage ?? "Bilinmeyen hata",
-            style: TextStyle(color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: _refreshData,
-            icon: const Icon(Icons.refresh),
-            label: const Text("Tekrar Dene"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.indigo,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.group_off, size: 64, color: Colors.grey.shade400),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            "Henüz size atanmış bir grup bulunamadı",
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "Yöneticiniz sizi bir gruba atayınca burada görünecektir",
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-          ),
-        ],
       ),
     );
   }

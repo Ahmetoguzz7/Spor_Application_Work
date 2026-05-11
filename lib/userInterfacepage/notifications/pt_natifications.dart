@@ -3,13 +3,11 @@ import 'package:my_app/datapage/data_page/data.dart';
 import 'package:my_app/datapage/fetch_data_page.dart';
 
 class DuyurularPage extends StatefulWidget {
-  final List<Notifications> tumDuyurular;
   final Users currentUser;
   final Coach? currentCoach;
 
   const DuyurularPage({
     super.key,
-    required this.tumDuyurular,
     required this.currentUser,
     this.currentCoach,
   });
@@ -19,94 +17,103 @@ class DuyurularPage extends StatefulWidget {
 }
 
 class _DuyurularPageState extends State<DuyurularPage> {
-  List<Notifications> filteredNotifications = [];
-  List<String> kullaniciGruplari = [];
-  bool isLoading = true;
+  late Future<List<Notifications>> _notificationsFuture;
+  String _selectedFilter = "Son 7 gün";
+  final List<String> _filterOptions = [
+    "Son 7 gün",
+    "Son 30 gün",
+    "Son 3 ay",
+    "Tümü",
+  ];
 
   @override
   void initState() {
     super.initState();
-    _kullaniciGruplariniGetir();
+    _notificationsFuture = _loadNotifications();
   }
 
-  Future<void> _kullaniciGruplariniGetir() async {
-    try {
-      print("========== GRUP BULMA ==========");
-      print(
-        "Kullanıcı: ${widget.currentUser.first_name} ${widget.currentUser.last_name}",
+  Future<List<Notifications>> _loadNotifications() async {
+    // Tüm duyuruları çek
+    final allNotifications = await GoogleSheetService.getNotifications(
+      userId: widget.currentUser.app,
+    );
+
+    // Kullanıcının gruplarını bul
+    List<String> userGroups = [];
+
+    if (widget.currentCoach != null &&
+        widget.currentCoach!.coach_id.isNotEmpty) {
+      final groups = await GoogleSheetService.getGroupsByCoach(
+        widget.currentCoach!.coach_id,
       );
-      print("Rol: ${widget.currentUser.role}");
-      print("Coach var mı: ${widget.currentCoach != null}");
-
-      if (widget.currentCoach != null &&
-          widget.currentCoach!.coach_id.isNotEmpty) {
-        final groups = await GoogleSheetService.getGroupsByCoach(
-          widget.currentCoach!.coach_id,
-        );
-        kullaniciGruplari = groups.map((g) => g.groups_id.toString()).toList();
-        print("📚 Antrenörün grupları: $kullaniciGruplari");
-      } else {
-        final groupRelations =
-            await GoogleSheetService.getGroupStudentsByStudentId(
-              widget.currentUser.app,
-            );
-        print("📚 Öğrenci ilişkileri: ${groupRelations.length}");
-        for (var rel in groupRelations) {
-          print("   group_id=${rel.groups_id}, is_active=${rel.is_active}");
-        }
-
-        kullaniciGruplari = groupRelations
-            .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
-            .map((rel) => rel.groups_id.toString())
-            .toList();
-        print("📚 Öğrencinin aktif grupları: $kullaniciGruplari");
-      }
-
-      _filtreleDuyurular();
-    } catch (e) {
-      print("Grup yükleme hatası: $e");
-    } finally {
-      setState(() => isLoading = false);
+      userGroups = groups.map((g) => g.groups_id.toString()).toList();
+    } else {
+      final groupRelations =
+          await GoogleSheetService.getGroupStudentsByStudentId(
+            widget.currentUser.app,
+          );
+      userGroups = groupRelations
+          .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
+          .map((rel) => rel.groups_id.toString())
+          .toList();
     }
-  }
 
-  void _filtreleDuyurular() {
-    print("========== DUYURU FİLTRELEME ==========");
-    print("Toplam duyuru: ${widget.tumDuyurular.length}");
-    print("Kullanıcı grupları: $kullaniciGruplari");
-
-    filteredNotifications = widget.tumDuyurular.where((d) {
+    // Filtrele
+    final filtered = allNotifications.where((d) {
       final recipientId = d.recipient_id?.toString() ?? "";
 
-      print("Duyuru: ${d.title} -> recipient_id: '$recipientId'");
-
+      // Herkese açık
       if (recipientId == "all" ||
           recipientId == "Tümü" ||
           recipientId == "ALL") {
-        print("  ✅ Herkese açık");
         return true;
       }
 
-      if (recipientId.isNotEmpty) {
-        for (var grupId in kullaniciGruplari) {
-          if (recipientId == grupId) {
-            print("  ✅ Grup eşleşti: $recipientId");
-            return true;
-          }
-        }
+      // Gruba özel
+      if (recipientId.isNotEmpty && userGroups.contains(recipientId)) {
+        return true;
       }
 
-      print("  ❌ Eşleşmedi");
       return false;
     }).toList();
 
-    filteredNotifications.sort((a, b) {
-      final dateA = _parseDate(a.sent_at);
-      final dateB = _parseDate(b.sent_at);
-      return dateB.compareTo(dateA);
-    });
+    // Tarihe göre sırala (en yeni en üstte)
+    final sorted = filtered
+      ..sort((a, b) {
+        final dateA = _parseDate(a.sent_at);
+        final dateB = _parseDate(b.sent_at);
+        return dateB.compareTo(dateA);
+      });
 
-    print("📊 Filtrelenmiş duyuru sayısı: ${filteredNotifications.length}");
+    // Seçilen filtreye göre tarih bazlı filtrele
+    return _filterByDate(sorted);
+  }
+
+  List<Notifications> _filterByDate(List<Notifications> notifications) {
+    final now = DateTime.now();
+    final cutoffDate = _getCutoffDate(now);
+
+    if (_selectedFilter == "Tümü") {
+      return notifications;
+    }
+
+    return notifications.where((n) {
+      final date = _parseDate(n.sent_at);
+      return date.isAfter(cutoffDate);
+    }).toList();
+  }
+
+  DateTime _getCutoffDate(DateTime now) {
+    switch (_selectedFilter) {
+      case "Son 7 gün":
+        return now.subtract(const Duration(days: 7));
+      case "Son 30 gün":
+        return now.subtract(const Duration(days: 30));
+      case "Son 3 ay":
+        return now.subtract(const Duration(days: 90));
+      default:
+        return DateTime(2000);
+    }
   }
 
   DateTime _parseDate(String? dateStr) {
@@ -126,33 +133,24 @@ class _DuyurularPageState extends State<DuyurularPage> {
       widget.currentUser.app,
     );
 
-    await _kullaniciGruplariniGetir();
-
     setState(() {
-      final index = filteredNotifications.indexWhere(
-        (d) => d.notifications_id == duyuru.notifications_id,
-      );
-      if (index != -1) {
-        final updatedDuyuru = Notifications(
-          notifications_id: duyuru.notifications_id,
-          sender_id: duyuru.sender_id,
-          recipient_id: duyuru.recipient_id,
-          title: duyuru.title,
-          message: duyuru.message, // 🔥 DÜZELTİLDİ
-          type: duyuru.type,
-          is_read: "TRUE",
-          sent_at: duyuru.sent_at,
-          groups_id: duyuru.groups_id,
-        );
-        filteredNotifications[index] = updatedDuyuru;
-      }
+      _notificationsFuture = _loadNotifications();
     });
+  }
+
+  void _changeFilter(String? filter) {
+    if (filter != null && filter != _selectedFilter) {
+      setState(() {
+        _selectedFilter = filter;
+        _notificationsFuture = _loadNotifications();
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
         title: const Text(
           "Duyurular & Bildirimler",
@@ -162,22 +160,165 @@ class _DuyurularPageState extends State<DuyurularPage> {
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
+        actions: [
+          // Filtre menüsü
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.filter_list),
+            onSelected: _changeFilter,
+            itemBuilder: (context) => _filterOptions.map((filter) {
+              return PopupMenuItem(
+                value: filter,
+                child: Row(
+                  children: [
+                    Icon(
+                      filter == _selectedFilter
+                          ? Icons.check_circle
+                          : Icons.circle_outlined,
+                      size: 18,
+                      color: filter == _selectedFilter
+                          ? Colors.indigo
+                          : Colors.grey,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(filter),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : filteredNotifications.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: filteredNotifications.length,
-              itemBuilder: (context, index) {
-                final duyuru = filteredNotifications[index];
-                return GestureDetector(
-                  onTap: () => _markAsRead(duyuru),
-                  child: _buildDuyuruCard(duyuru),
-                );
-              },
+      body: FutureBuilder<List<Notifications>>(
+        future: _notificationsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.indigo),
+                  SizedBox(height: 16),
+                  Text("Duyurular yükleniyor..."),
+                ],
+              ),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade300,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text("Duyurular yüklenirken hata oluştu"),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _notificationsFuture = _loadNotifications();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("Tekrar Dene"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final notifications = snapshot.data ?? [];
+
+          if (notifications.isEmpty) {
+            return _buildEmptyState();
+          }
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {
+                _notificationsFuture = _loadNotifications();
+              });
+              await _notificationsFuture;
+            },
+            child: Column(
+              children: [
+                // Filtre bilgisi
+                Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today,
+                        size: 14,
+                        color: Colors.indigo,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _selectedFilter,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.indigo.shade700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "${notifications.length} duyuru",
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: notifications.length,
+                    itemBuilder: (context, index) {
+                      final duyuru = notifications[index];
+                      return GestureDetector(
+                        onTap: () => _markAsRead(duyuru),
+                        child: _buildDuyuruCard(duyuru),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
+          );
+        },
+      ),
     );
   }
 
@@ -188,75 +329,126 @@ class _DuyurularPageState extends State<DuyurularPage> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: isUnread ? Colors.blue.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(20),
         border: isUnread
             ? Border.all(
                 color: _getIconColor(duyuru.type).withOpacity(0.3),
                 width: 1.5,
               )
-            : Border.all(color: Colors.transparent, width: 1.5),
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.grey.withOpacity(0.1),
-            blurRadius: 5,
+            blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(15),
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundColor: _getIconColor(duyuru.type).withOpacity(0.1),
-          child: Icon(_getIcon(duyuru.type), color: _getIconColor(duyuru.type)),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                duyuru.title,
-                style: TextStyle(
-                  fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
-                  fontSize: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _markAsRead(duyuru),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // İkon
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: _getIconColor(duyuru.type).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    _getIcon(duyuru.type),
+                    color: _getIconColor(duyuru.type),
+                    size: 28,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 14),
+                // İçerik
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              duyuru.title,
+                              style: TextStyle(
+                                fontWeight: isUnread
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          if (isUnread)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _getIconColor(duyuru.type),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        duyuru.message,
+                        style: TextStyle(color: Colors.grey[600], height: 1.4),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getIconColor(
+                                duyuru.type,
+                              ).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _getTypeDisplay(duyuru.type),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _getIconColor(duyuru.type),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.access_time,
+                            size: 12,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatDate(duyuru.sent_at),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            if (isUnread)
-              const Icon(
-                Icons.fiber_manual_record,
-                color: Colors.blue,
-                size: 12,
-              ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                duyuru.message,
-                style: TextStyle(color: Colors.grey[700], height: 1.4),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "Tip: ${_getTypeDisplay(duyuru.type)}",
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _getIconColor(duyuru.type),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    _formatDate(duyuru.sent_at),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ],
           ),
         ),
       ),
@@ -329,15 +521,27 @@ class _DuyurularPageState extends State<DuyurularPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.notifications_none_rounded,
-            size: 80,
-            color: Colors.grey[300],
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.notifications_none_rounded,
+              size: 64,
+              color: Colors.grey.shade400,
+            ),
           ),
-          const SizedBox(height: 16),
-          Text(
+          const SizedBox(height: 24),
+          const Text(
             "Henüz bir duyuru bulunmuyor.",
-            style: TextStyle(color: Colors.grey[500], fontSize: 16),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Yeni duyurular geldiğinde burada görünecektir",
+            style: TextStyle(color: Colors.grey.shade500),
           ),
         ],
       ),

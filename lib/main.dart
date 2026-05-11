@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/date_symbol_data_file.dart';
+import 'package:intl/intl.dart';
+import 'package:my_app/unifiedLoginPage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:convert';
-
-// 👇 KENDİ SAYFALARIN (İmport yollarını kontrol etmeyi unutma)
-import 'package:my_app/managerpage/manager_interface.dart';
-import 'package:my_app/managerpage/signuppage/sign_admin.dart';
-import 'package:my_app/userInterfacepage/pt_login_page.dart/pt_signup.dart';
-import 'package:my_app/ptpage/user_loginandsignup_page/loginandsignup.dart';
 
 // 👇 GLOBAL NAVIGATOR KEY
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -19,7 +16,16 @@ const String GITHUB_REPO = "Spor_Application_Work";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Türkçe locale ayarı
+
+  // 🔥 GÜNCELLEME KONTROLÜNÜ BAŞLAT
   runApp(const MyApp());
+
+  // Uygulama açıldıktan sonra güncelleme kontrolü yap
+  Future.delayed(const Duration(seconds: 1), () {
+    checkForUpdate();
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -30,121 +36,12 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
+      title: 'Spor Uygulaması',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
       ),
-      home: const RoleSelectPage(),
-    );
-  }
-}
-
-class RoleSelectPage extends StatefulWidget {
-  const RoleSelectPage({super.key});
-
-  @override
-  State<RoleSelectPage> createState() => _RoleSelectPageState();
-}
-
-class _RoleSelectPageState extends State<RoleSelectPage> {
-  @override
-  void initState() {
-    super.initState();
-    // Uygulama açılırken güncelleme kontrolü yap
-    WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Giriş Türünü Seç"),
-        centerTitle: true,
-        actions: [
-          FutureBuilder<String>(
-            future: getCurrentVersion(),
-            builder: (context, snapshot) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Center(
-                  child: Text(
-                    "v${snapshot.data ?? '...'}",
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            roleCard(
-              context,
-              title: "Kullanıcı Girişi",
-              subtitle: "Sporcular ve Veliler İçin",
-              icon: Icons.person,
-              color: Colors.blue.shade100,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AuthSelectionPage()),
-              ),
-            ),
-            const SizedBox(height: 16),
-            roleCard(
-              context,
-              title: "Koç Girişi",
-              subtitle: "Antrenörler İçin",
-              icon: Icons.sports,
-              color: Colors.orange.shade100,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const PtSignUp()),
-              ),
-            ),
-            const SizedBox(height: 16),
-            roleCard(
-              context,
-              title: "Yönetici Girişi",
-              subtitle: "Sistem ve Şube Yönetimi",
-              icon: Icons.admin_panel_settings,
-              color: Colors.red.shade100,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget roleCard(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundColor: color,
-          child: Icon(icon, color: Colors.black87),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
+      home: const UnifiedLoginPage(),
     );
   }
 }
@@ -154,8 +51,10 @@ class _RoleSelectPageState extends State<RoleSelectPage> {
 Future<String> getCurrentVersion() async {
   try {
     final packageInfo = await PackageInfo.fromPlatform();
+    print("📱 Mevcut sürüm: ${packageInfo.version}");
     return packageInfo.version;
   } catch (e) {
+    print("❌ Sürüm okuma hatası: $e");
     return "1.0.0";
   }
 }
@@ -165,14 +64,19 @@ Future<Map<String, dynamic>?> getLatestReleaseFromGitHub() async {
     final url = Uri.parse(
       "https://api.github.com/repos/$GITHUB_USERNAME/$GITHUB_REPO/releases/latest",
     );
+    print("🌐 GitHub kontrolü yapılıyor: $url");
+
     final response = await http.get(
       url,
       headers: {'Accept': 'application/vnd.github.v3+json'},
     );
 
+    print("📡 GitHub response: ${response.statusCode}");
+
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final assets = data['assets'] as List;
+      print("📦 GitHub'dan gelen sürüm: ${data['tag_name']}");
 
       final apkAsset = assets.firstWhere(
         (asset) => asset['name'].toString().endsWith('.apk'),
@@ -180,27 +84,40 @@ Future<Map<String, dynamic>?> getLatestReleaseFromGitHub() async {
       );
 
       if (apkAsset != null) {
+        // Sürüm numarasını temizle (sadece sayılar)
+        String version = data['tag_name'].toString().replaceAll(
+          RegExp(r'[^0-9.]'),
+          '',
+        );
+        print("✅ Yeni sürüm bulundu: $version");
+
         return {
-          'version': data['tag_name'].toString().replaceAll(
-            RegExp(r'[a-zA-Z]'),
-            '',
-          ),
+          'version': version,
           'downloadUrl': apkAsset['browser_download_url'],
           'releaseNotes': data['body'] ?? 'Yeni sürüm mevcut.',
         };
+      } else {
+        print("⚠️ APK dosyası bulunamadı");
       }
+    } else {
+      print("❌ GitHub'dan veri alınamadı: ${response.statusCode}");
     }
   } catch (e) {
-    debugPrint("Güncelleme kontrolü hatası: $e");
+    print("❌ Güncelleme kontrolü hatası: $e");
   }
   return null;
 }
 
 bool isNewerVersion(String current, String latest) {
-  List<int> parse(String v) =>
-      v.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+  List<int> parse(String v) {
+    return v.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+  }
+
   final v1 = parse(current);
   final v2 = parse(latest);
+
+  print("🔍 Sürüm karşılaştırması: $current vs $latest");
+
   for (var i = 0; i < v2.length; i++) {
     int v1Part = i < v1.length ? v1[i] : 0;
     if (v2[i] > v1Part) return true;
@@ -209,19 +126,27 @@ bool isNewerVersion(String current, String latest) {
   return false;
 }
 
+// 🔥 GÜNCELLEME KONTROLÜ
 Future<void> checkForUpdate() async {
+  print("🔍 Güncelleme kontrolü başlatıldı...");
+
   final current = await getCurrentVersion();
   final latestData = await getLatestReleaseFromGitHub();
 
   if (latestData != null && isNewerVersion(current, latestData['version'])) {
-    showUpdateDialog(latestData);
+    print("🔄 Yeni sürüm mevcut! Güncelleme dialogu gösteriliyor...");
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      showUpdateDialog(context, latestData);
+    } else {
+      print("⚠️ Context bulunamadı, dialog gösterilemiyor");
+    }
+  } else {
+    print("✅ Uygulama güncel.");
   }
 }
 
-void showUpdateDialog(Map<String, dynamic> release) {
-  final context = navigatorKey.currentContext;
-  if (context == null) return;
-
+void showUpdateDialog(BuildContext context, Map<String, dynamic> release) {
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -259,14 +184,18 @@ void showUpdateDialog(Map<String, dynamic> release) {
 }
 
 Future<void> downloadAndInstallApk(String url) async {
+  print("📥 APK indirme başlatılıyor: $url");
+
   final Uri uri = Uri.parse(url);
   try {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+      print("✅ İndirme sayfası açıldı");
     } else {
       throw 'Link açılamadı';
     }
   } catch (e) {
+    print("❌ İndirme hatası: $e");
     if (navigatorKey.currentContext != null) {
       ScaffoldMessenger.of(
         navigatorKey.currentContext!,

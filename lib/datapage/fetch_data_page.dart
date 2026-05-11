@@ -1,1440 +1,8 @@
-/*
-  GoogleSheetService sınıfı, Google Sheets API'si üzerinden veri çekme, kullanıcı işlemleri, bildirim yönetimi ve diğer temel işlevleri sağlayan merkezi bir hizmettir. Bu sınıf, uygulamanın farklı bölümlerinde veri erişimini kolaylaştırmak ve kod tekrarını azaltmak için tasarlanmıştır.
-
-  Temel Özellikler:
-  - fetchTable: Belirli bir sayfadan (sheet) veri çekmek için genel bir fonksiyon.
-  - getUsers, getBranches, getSports, getGroups: Veritabanındaki temel tabloları çekmek için özel fonksiyonlar.
-  - login, registerUser, updateProfile: Kullanıcı işlemleri için fonksiyonlar.
-  - getNotificationsForUser, markNotificationAsRead: Bildirim yönetimi için fonksiyonlar.
-  - uploadImageToDrive: Google Drive'a fotoğraf yüklemek için fonksiyon.
-  - assignStudentToGroup, removeStudentFromGroup, assignCoachToGroup: Grup yönetimi için fonksiyonlar.
-
-  Bu sınıf, uygulamanın veri katmanını soyutlayarak diğer bileşenlerin sadece gerekli fonksiyonları çağırmasını sağlar. Ayrıca, hata yönetimi ve loglama ile API çağrılarının durumunu takip etmeye yardımcı olur.
-*/
-/*
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:my_app/datapage/data_page/data.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:path/path.dart' as path;
-
-class GoogleSheetService {
-  static const String _baseUrl =
-      "https://script.google.com/macros/s/AKfycbwHaxA62z-nOKcLtaHd8FH8ri2jDqFFTuUi5wNqkeeb9WH6y5w7L6FReXyq4ICYynBA/exec";
-  // =========================================================================
-  // 🔥 MERKEZİ POST FONKSİYONU (302 YÖNLENDİRMESİNİ OTOMATİK ÇÖZER)
-  // =========================================================================
-  static Future<http.Response?> _postRequest(
-    Map<String, dynamic> bodyData,
-  ) async {
-    try {
-      var response = await http.post(
-        Uri.parse(_baseUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(bodyData),
-      );
-
-      if (response.statusCode == 302) {
-        String? redirectUrl = response.headers['location'];
-
-        if (redirectUrl == null && response.body.contains('HREF="')) {
-          final start = response.body.indexOf('HREF="') + 6;
-          final end = response.body.indexOf('"', start);
-          redirectUrl = response.body
-              .substring(start, end)
-              .replaceAll('&amp;', '&');
-        }
-
-        if (redirectUrl != null) {
-          response = await http.get(Uri.parse(redirectUrl));
-        }
-      }
-
-      return response;
-    } catch (e) {
-      print("POST İstek Hatası: $e");
-      return null;
-    }
-  }
-
-  static Future<List<Notifications>> getNotifications({required userId}) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl?sheet=notifications'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> decoded = json.decode(response.body);
-
-        if (decoded['success'] == true) {
-          final List<dynamic> data = decoded['data'];
-          final List<Notifications> notifications = data.map((item) {
-            return Notifications(
-              notifications_id: item['notifications_id']?.toString() ?? '',
-              sender_id: item['sender_id']?.toString() ?? '',
-              recipient_id: item['recipient_id']?.toString() ?? '',
-              title: item['title']?.toString() ?? '',
-              message: item['message']?.toString() ?? '',
-              type: item['type']?.toString() ?? 'announcement',
-              is_read: item['is_read']?.toString() ?? 'FALSE',
-              sent_at: item['sent_at']?.toString() ?? '',
-              groups_id: item['groups_id']?.toString() ?? '', // 🔥 VARSA EKLE
-            );
-          }).toList();
-
-          print("📊 Toplam bildirim: ${notifications.length}");
-          for (var n in notifications) {
-            print(
-              "   Bildirim: ${n.title} - recipient_id: '${n.recipient_id}'",
-            );
-          }
-
-          return notifications;
-        }
-      }
-      return [];
-    } catch (e) {
-      print("❌ getNotifications hatası: $e");
-      return [];
-    }
-  }
-
-  /*
-  static Future<List<Notifications>> getNotifications({required userId}) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl?sheet=notifications'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> decoded = json.decode(response.body);
-
-        if (decoded['success'] == true) {
-          final List<dynamic> data = decoded['data'];
-          final List<Notifications> tumBildirimler = data.map((item) {
-            return Notifications(
-              notifications_id: item['notifications_id']?.toString() ?? '',
-              sender_id: item['sender_id']?.toString() ?? '',
-              recipient_id: item['recipient_id']?.toString() ?? '',
-              title: item['title']?.toString() ?? '',
-              message: item['message']?.toString() ?? '',
-              type: item['type']?.toString() ?? 'announcement',
-              is_read: item['is_read']?.toString() ?? 'FALSE',
-              sent_at: item['sent_at']?.toString() ?? '',
-              groups_id: item['groups_id']?.toString() ?? '',
-            );
-          }).toList();
-
-          // 🔥 FİLTREYİ BURADA YAP!
-          final String userIdStr = userId.toString();
-          final filtered = tumBildirimler.where((n) {
-            final recipientId = n.recipient_id?.toString() ?? '';
-            return recipientId == 'all' || recipientId == userIdStr;
-          }).toList();
-
-          print(
-            "📊 Toplam bildirim: ${tumBildirimler.length}, Filtrelenmiş: ${filtered.length}",
-          );
-          for (var n in filtered) {
-            print("   ✅ ${n.title} - recipient_id: '${n.recipient_id}'");
-          }
-
-          return filtered;
-        }
-      }
-      return [];
-    } catch (e) {
-      print("❌ getNotifications hatası: $e");
-      return [];
-    }
-  }
-*/
-  // SMS ile kod gönderme (Twilio veya benzeri servis gerekir)
-  static Future<bool> send2FACode(String phoneNumber, String code) async {
-    try {
-      final response = await _postRequest({
-        "action": "send2FACode",
-        "phone": phoneNumber,
-        "code": code,
-      });
-
-      if (response != null && response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        return decoded['success'] == true;
-      }
-      return false;
-    } catch (e) {
-      print("SMS gönderme hatası: $e");
-      return false;
-    }
-  }
-
-  static Future<void> updateLastLogin(String userId) async {
-    try {
-      // Önce kullanıcıyı bul
-      final users = await getUsers();
-      final user = users.firstWhere((u) => u.app == userId);
-
-      // Güncel bilgilerle kaydet
-      final response = await _postRequest({
-        "action": "insert",
-        "table": "users",
-        "data": {
-          "app": user.app,
-          "first_name": user.first_name,
-          "last_name": user.last_name,
-          "email": user.email,
-          "phone": user.phone,
-          "password_hash": user.password_hash,
-          "role": user.role,
-          "profile_photo_url": user.profile_photo_url,
-          "branches_id": user.branches_id,
-          "amount": user.amount,
-          "b_date": user.b_date,
-          "created_at": user.created_at,
-          "last_login": DateTime.now()
-              .toIso8601String(), // 🔥 SADECE BURAYI GÜNCELLE
-          "is_active": user.is_active,
-        },
-      });
-
-      if (response != null && response.statusCode == 200) {
-        print("✅ Son giriş güncellendi: $userId");
-      }
-    } catch (e) {
-      print("Güncelleme hatası: $e");
-    }
-  }
-
-  // =========================================================================
-  // ✅ TEMEL OKUMA FONKSİYONU (GET)
-  // =========================================================================
-  static Future<List<dynamic>> fetchTable(String sheetName) async {
-    try {
-      final response = await http.get(Uri.parse("$_baseUrl?sheet=$sheetName"));
-
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
-
-        if (decoded is Map && decoded.containsKey('success')) {
-          if (decoded['success'] == true && decoded['data'] is List) {
-            return decoded['data'] as List<dynamic>;
-          } else {
-            print("fetchTable - API Hatası: ${decoded['error']}");
-            return [];
-          }
-        } else if (decoded is List) {
-          return decoded;
-        }
-      }
-      return [];
-    } catch (e) {
-      print("fetchTable - Bağlantı Hatası: $e");
-      return [];
-    }
-  }
-
-  static Future<String?> uploadImageToDrive(
-    File imageFile,
-    String fileName,
-  ) async {
-    try {
-      // Base64'e çevir
-      List<int> imageBytes = await imageFile.readAsBytes();
-      String base64Image = base64Encode(imageBytes);
-
-      final response = await _postRequest({
-        "action": "uploadImage",
-        "file_name": fileName,
-        "file_data": base64Image,
-        "folder": "profile_photos",
-      });
-
-      if (response != null && response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true) {
-          print("✅ Fotoğraf yüklendi: ${decoded['url']}");
-          return decoded['url'];
-        }
-      }
-      return null;
-    } catch (e) {
-      print("Fotoğraf yükleme hatası: $e");
-      return null;
-    }
-  }
-
-  // =========================================================================
-  // ✅ KULLANICI İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Users>> getUsers() async {
-    final rawData = await fetchTable("users");
-    return rawData.map((item) => Users.fromJson(item)).toList();
-  }
-
-  static Future<List<Users>> getStudents() async {
-    final rawData = await fetchTable("users");
-    return rawData.map((item) => Users.fromJson(item)).toList();
-  }
-
-  static Future<List<Users>> getStudentsForCoach(String coachBranchId) async {
-    final allStudents = await getStudents();
-    return allStudents.where((s) => s.branches_id == coachBranchId).toList();
-  }
-
-  static Future<List<Users>> getCoachesOnly() async {
-    final allUsers = await getUsers();
-    return allUsers.where((u) => u.role.toLowerCase() == 'coach').toList();
-  }
-
-  static Future<List<Users>> getStudentsOnly() async {
-    final allUsers = await getUsers();
-    return allUsers.where((u) => u.role.toLowerCase() == 'student').toList();
-  }
-
-  static Future<List<Users>> getParentsOnly() async {
-    final allUsers = await getUsers();
-    return allUsers.where((u) => u.role.toLowerCase() == 'parent').toList();
-  }
-
-  static Future<Users?> login(String email, String password) async {
-    print("========== LOGIN TEST ==========");
-    print("Email: $email");
-
-    final response = await _postRequest({
-      "action": "login",
-      "email": email,
-      "password": password,
-    });
-
-    print("Response status: ${response?.statusCode}");
-    print("Response body: ${response?.body}");
-
-    if (response != null && response.statusCode == 200) {
-      try {
-        final decoded = json.decode(response.body);
-        print("Decoded: $decoded");
-
-        if (decoded['success'] == true) {
-          Map<String, dynamic>? userMap;
-
-          if (decoded['data'] != null && decoded['data']['user'] != null) {
-            userMap = Map<String, dynamic>.from(decoded['data']['user']);
-            print("✅ userMap data.user'dan alındı");
-          } else if (decoded['user'] != null) {
-            userMap = Map<String, dynamic>.from(decoded['user']);
-            print("✅ userMap user'dan alındı");
-          }
-
-          if (userMap != null) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('logged_user', jsonEncode(userMap));
-
-            print("✅ Login başarılı! Kullanıcı: ${userMap['email']}");
-            print(
-              "✅ Kullanıcı adı: ${userMap['first_name']} ${userMap['last_name']}",
-            );
-            return Users.fromJson(userMap);
-          } else {
-            print("❌ userMap oluşturulamadı");
-          }
-        } else {
-          print("❌ Login başarısız: ${decoded['error']}");
-        }
-      } catch (e) {
-        print("❌ JSON parse hatası: $e");
-      }
-    } else {
-      print("❌ HTTP hatası: ${response?.statusCode}");
-    }
-
-    return null;
-  }
-
-  Future<String> loadJsonAsset(String fileName) async {
-    return await rootBundle.loadString('assets/data/$fileName.json');
-  }
-
-  static Future<Users?> loginRequest(String email, String password) async {
-    return await login(email, password);
-  }
-
-  static Future<bool> registerUser(Users newUser) async {
-    final response = await _postRequest({
-      "action": "insert",
-      "table": "users",
-      "data": newUser.toJson(),
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  static Future<bool> updateProfile(Map<String, dynamic> data) async {
-    final response = await _postRequest({"action": "updateUser", "data": data});
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  Future<Users?> getSavedUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? userJson = prefs.getString('logged_user');
-
-    if (userJson != null) {
-      final Map<String, dynamic> userMap = json.decode(userJson);
-      print("✅ Kayıtlı kullanıcı bulundu: ${userMap['email']}");
-      return Users.fromJson(userMap);
-    }
-
-    print("❌ Kayıtlı kullanıcı yok");
-    return null;
-  }
-
-  static Future<bool> deactivateUser(String userId) async {
-    final response = await _postRequest({
-      "action": "deactivateUser",
-      "user_id": userId,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ BRANCH İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Branches>> getBranches() async {
-    final rawData = await fetchTable("branches");
-    return rawData.map((item) => Branches.fromJson(item)).toList();
-  }
-
-  static Future<Branches?> getBranchById(String branchId) async {
-    final allBranches = await getBranches();
-    try {
-      return allBranches.firstWhere((b) => b.branches_id == branchId);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // =========================================================================
-  // ✅ SPORTS İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Sports>> getSports() async {
-    final rawData = await fetchTable("sports");
-    return rawData.map((item) => Sports.fromJson(item)).toList();
-  }
-
-  static Future<Sports?> getSportById(String sportId) async {
-    final allSports = await getSports();
-    try {
-      return allSports.firstWhere((s) => s.sports_id == sportId);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // =========================================================================
-  // ✅ GRUP İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Group>> getGroups() async {
-    final rawData = await fetchTable("groups");
-    return rawData.map((item) => Group.fromJson(item)).toList();
-  }
-
-  static Future<List<Group>> getGroupsByCoach(String coachId) async {
-    final allGroups = await getGroups();
-    return allGroups.where((g) => g.coach_id == coachId).toList();
-  }
-
-  static Future<List<Group>> getGroupsByBranch(String branchId) async {
-    final allGroups = await getGroups();
-    return allGroups.where((g) => g.branches_id == branchId).toList();
-  }
-
-  static Future<Group?> getGroupById(String groupId) async {
-    final allGroups = await getGroups();
-    try {
-      return allGroups.firstWhere((g) => g.groups_id == groupId);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<List<GroupStudent>> getGroupStudentsByGroupId(
-    String groupId,
-  ) async {
-    final all = await getGroupStudents();
-    print("🔍 getGroupStudentsByGroupId: groupId=$groupId");
-    print("   Toplam ilişki: ${all.length}");
-
-    final filtered = all.where((gs) => gs.groups_id == groupId).toList();
-
-    print("   Filtrelenmiş: ${filtered.length}");
-    for (var gs in filtered) {
-      print("      student_id: ${gs.student_id}, is_active: ${gs.is_active}");
-    }
-
-    return filtered;
-  }
-
-  static Future<List<Group>> getGroupsByCoachId(String coachId) async {
-    final allGroups = await getGroups();
-    return allGroups.where((g) => g.coach_id == coachId).toList();
-  }
-
-  static Future<List<Group>> getGroupsByStudentId(String studentId) async {
-    final allGroupRelations = await getGroupStudents();
-    final allGroups = await getGroups();
-
-    final studentGroupIds = allGroupRelations
-        .where((rel) => rel.student_id == studentId && rel.is_active == "TRUE")
-        .map((rel) => rel.groups_id)
-        .toList();
-
-    return allGroups
-        .where((g) => studentGroupIds.contains(g.groups_id))
-        .toList();
-  }
-
-  static Future<Users?> getStudentCoach(String studentId) async {
-    final studentGroups = await getGroupsByStudentId(studentId);
-    if (studentGroups.isEmpty) return null;
-
-    final coachId = studentGroups.first.coach_id;
-    final coaches = await getCoachesOnly();
-    try {
-      final coachUser = coaches.firstWhere((c) => c.app == coachId);
-      return coachUser;
-    } catch (e) {
-      print("Öğrencinin antrenörü bulunamadı: $e");
-      return null;
-    }
-  }
-
-  static Future<bool> updateGroup(
-    String groupId,
-    Map<String, dynamic> updateData,
-  ) async {
-    final response = await _postRequest({
-      "action": "updateGroup",
-      "group_id": groupId,
-      "data": updateData,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ GRUP-ÖĞRENCİ İLİŞKİLERİ
-  // =========================================================================
-  static Future<List<GroupStudent>> getGroupStudents() async {
-    final rawData = await fetchTable("group_students");
-    return rawData.map((item) => GroupStudent.fromJson(item)).toList();
-  }
-
-  static Future<List<GroupStudent>> getGroupStudentsByStudentId(
-    String studentId,
-  ) async {
-    final all = await getGroupStudents();
-    return all.where((gs) => gs.student_id == studentId).toList();
-  }
-
-  static Future<List<Group>> getActiveGroupsByStudentId(
-    String studentId,
-  ) async {
-    final allGroupRelations = await getGroupStudentsByStudentId(studentId);
-    final activeGroupIds = allGroupRelations
-        .where((rel) => rel.is_active == "TRUE")
-        .map((rel) => rel.groups_id)
-        .toList();
-
-    final allGroups = await getGroups();
-    return allGroups
-        .where((g) => activeGroupIds.contains(g.groups_id))
-        .toList();
-  }
-
-  static Future<bool> assignStudentToGroup(
-    String studentId,
-    String groupId,
-  ) async {
-    final response = await _postRequest({
-      "action": "assignStudentToGroup",
-      "student_id": studentId,
-      "group_id": groupId,
-      "is_active": "TRUE",
-    });
-
-    if (response != null && response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      return decoded['success'] == true;
-    }
-    return false;
-  }
-
-  static Future<bool> removeStudentFromGroup(
-    String studentId,
-    String groupId,
-  ) async {
-    final response = await _postRequest({
-      "action": "removeStudentFromGroup",
-      "student_id": studentId,
-      "group_id": groupId,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      return decoded['success'] == true;
-    }
-    return false;
-  }
-
-  static Future<bool> assignCoachToGroup(String groupId, String coachId) async {
-    final response = await _postRequest({
-      "action": "assignCoachToGroup",
-      "group_id": groupId,
-      "coach_id": coachId,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      return decoded['success'] == true;
-    }
-    return false;
-  }
-
-  /*
-  // =========================================================================
-  // ✅ BİLDİRİM İŞLEMLERİ (TEK VE DÜZELTİLMİŞ)
-  // =========================================================================
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-    String userId,
-  ) async {
-    try {
-      print("🔍 getNotificationsForUser - userId: '$userId'");
-
-      final rawData = await fetchTable("notifications");
-
-      if (rawData.isEmpty) return [];
-
-      List<Map<String, dynamic>> notifications = [];
-
-      for (var item in rawData) {
-        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-
-        String recipientId = notif['recipient_id']?.toString() ?? '';
-        String title = notif['title']?.toString() ?? '';
-
-        print(
-          "   Kontrol: recipient_id='$recipientId' == userId='$userId' ? ${recipientId == userId}",
-        );
-
-        // 🔥 EĞER KULLANICI ID BOŞSA veya 'all' ise veya eşleşiyorsa
-        if (userId.isEmpty || recipientId == 'all' || recipientId == userId) {
-          notifications.add(notif);
-          print("   ✅ EKLENDİ: $title");
-        } else {
-          print("   ❌ EKLENMEDİ: $title");
-        }
-      }
-
-      notifications.sort((a, b) {
-        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
-        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
-        return dateB.compareTo(dateA);
-      });
-
-      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-      return notifications;
-    } catch (e) {
-      print("Bildirimler alınamadı: $e");
-      return [];
-    }
-  }
-
-  */
-  /*
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-  String userId,
-) async {
-  try {
-    final rawData = await fetchTable("notifications");
-    
-    if (rawData.isEmpty) return [];
-
-    List<Map<String, dynamic>> notifications = [];
-
-    for (var item in rawData) {
-      Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-      
-      // 🔥 YÖNETİCİ İÇİN TÜM BİLDİRİMLERİ GÖSTER
-      // userId boş veya 'admin' veya 'Admin' ise tümünü göster
-      if (userId.isEmpty || 
-          userId.toLowerCase() == 'admin' || 
-          notif['recipient_id'] == 'all' || 
-          notif['recipient_id'] == userId) {
-        notifications.add(notif);
-      }
-    }
-
-    notifications.sort((a, b) {
-      DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
-      DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
-      return dateB.compareTo(dateA);
-    });
-
-    print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-    return notifications;
-  } catch (e) {
-    print("Bildirimler alınamadı: $e");
-    return [];
-  }
-}*/
-  /*
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-    String userId,
-  ) async {
-    try {
-      final rawData = await fetchTable("notifications");
-
-      if (rawData.isEmpty) return [];
-
-      List<Map<String, dynamic>> notifications = [];
-
-      for (var item in rawData) {
-        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-
-        // 🔥 YÖNETİCİ İÇİN TÜM BİLDİRİMLERİ GÖSTER
-        // userId boş veya 'admin' veya 'Admin' ise tümünü göster
-        if (userId.isEmpty ||
-            userId.toLowerCase() == 'admin' ||
-            notif['recipient_id'] == 'all' ||
-            notif['recipient_id'] == userId) {
-          notifications.add(notif);
-        }
-      }
-
-      notifications.sort((a, b) {
-        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
-        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
-        return dateB.compareTo(dateA);
-      });
-
-      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-      return notifications;
-    } catch (e) {
-      print("Bildirimler alınamadı: $e");
-      return [];
-    }
-  }
-  */
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-    String userId,
-  ) async {
-    try {
-      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
-
-      final rawData = await fetchTable("notifications");
-      print("📊 Toplam bildirim: ${rawData.length}");
-
-      if (rawData.isEmpty) return [];
-
-      // 🔥 ADMİN KONTROLÜ (userId boş veya "Admin" veya "admin" veya sayı değilse)
-      bool isAdmin =
-          userId.isEmpty ||
-          userId == "Admin" ||
-          userId == "admin" ||
-          userId == "ADMIN";
-
-      // 🔥 KULLANICININ GRUPLARINI BUL (SADECE ADMIN DEĞİLSE)
-      List<String> userGroups = [];
-
-      if (!isAdmin) {
-        final allUsers = await getUsers();
-        final currentUser = allUsers.firstWhere(
-          (u) => u.app.toString() == userId,
-          orElse: () => Users(
-            app: "",
-            first_name: "",
-            last_name: "",
-            email: "",
-            phone: "",
-            password_hash: "",
-            role: "",
-            profile_photo_url: "",
-            amount: "",
-            b_date: "",
-            created_at: "",
-            last_login: "",
-            is_active: "",
-            branches_id: "",
-          ),
-        );
-
-        if (currentUser.role.toLowerCase() == 'coach' ||
-            currentUser.role.toLowerCase() == 'antrenör') {
-          final coaches = await getCoaches();
-          final currentCoach = coaches.firstWhere(
-            (c) => c.user_id == userId,
-            orElse: () => Coach(
-              coach_id: "",
-              user_id: "",
-              branches_id: "",
-              sports_id: "",
-              bio: "",
-              certificate_info: "",
-              monthly_salary: "",
-              hired_at: "",
-            ),
-          );
-          if (currentCoach.coach_id.isNotEmpty) {
-            final groups = await getGroupsByCoach(currentCoach.coach_id);
-            userGroups = groups.map((g) => g.groups_id.toString()).toList();
-            print("📚 Antrenörün grupları: $userGroups");
-          }
-        } else if (currentUser.role.toLowerCase() == 'student') {
-          final groupRelations = await getGroupStudentsByStudentId(userId);
-          userGroups = groupRelations
-              .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
-              .map((rel) => rel.groups_id.toString())
-              .toList();
-          print("📚 Öğrencinin grupları: $userGroups");
-        }
-      } else {
-        print("👑 Admin kullanıcı - tüm bildirimleri görecek");
-      }
-
-      List<Map<String, dynamic>> notifications = [];
-
-      for (var item in rawData) {
-        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-        String recipientId = notif['recipient_id']?.toString() ?? '';
-        String title = notif['title']?.toString() ?? '';
-
-        // 🔥 FİLTRELEME KURALLARI:
-        bool shouldAdd = false;
-        String reason = "";
-
-        // 1. Herkese açık
-        if (recipientId == 'all' ||
-            recipientId == 'Tümü' ||
-            recipientId == 'ALL') {
-          shouldAdd = true;
-          reason = "Herkese açık";
-        }
-        // 2. 🔥 ADMIN İSE TÜM BİLDİRİMLERİ GÖSTER (GRUP DA DAHİL)
-        else if (isAdmin) {
-          shouldAdd = true;
-          reason = "Admin yetkisi";
-        }
-        // 3. Direkt kullanıcıya gönderilmiş
-        else if (recipientId == userId) {
-          shouldAdd = true;
-          reason = "Direkt kullanıcıya";
-        }
-        // 4. Kullanıcının grubuna gönderilmiş
-        else if (userGroups.contains(recipientId)) {
-          shouldAdd = true;
-          reason = "Gruba özel (grup $recipientId)";
-        }
-
-        if (shouldAdd) {
-          notifications.add(notif);
-          print("   ✅ $reason: $title");
-        } else {
-          print("   ❌ EKLENMEDİ: $title (recipientId=$recipientId)");
-        }
-      }
-
-      notifications.sort((a, b) {
-        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
-        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
-        return dateB.compareTo(dateA);
-      });
-
-      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-      return notifications;
-    } catch (e) {
-      print("Bildirimler alınamadı: $e");
-      return [];
-    }
-  }
-
-  /*
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-    String userId,
-  ) async {
-    try {
-      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
-
-      final rawData = await fetchTable("notifications");
-      print("📊 Toplam bildirim: ${rawData.length}");
-
-      if (rawData.isEmpty) return [];
-
-      List<Map<String, dynamic>> notifications = [];
-
-      for (var item in rawData) {
-        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-        String recipientId = notif['recipient_id']?.toString() ?? '';
-        String title = notif['title']?.toString() ?? '';
-
-        print("   recipientId: '$recipientId', userId: '$userId'");
-
-        // 🔥 HERKESE AÇIK veya DİREKT KULLANICIYA
-        if (recipientId == 'all' ||
-            recipientId == 'Tümü' ||
-            recipientId == 'ALL') {
-          notifications.add(notif);
-          print("   ✅ Herkese açık: $title");
-        } else if (recipientId == userId) {
-          notifications.add(notif);
-          print("   ✅ Direkt kullanıcıya: $title");
-        } else {
-          print("   ❌ EKLENMEDİ: $title");
-        }
-      }
-
-      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-      return notifications;
-    } catch (e) {
-      print("Bildirimler alınamadı: $e");
-      return [];
-    }
-  }
-*/
-  /*
-  static Future<void> markNotificationAsRead(
-    String notificationId,
-    String userId,
-  ) async {
-    try {
-      final response = await _postRequest({
-        "action": "updateNotification",
-        "notifications_id": notificationId,
-        "is_read": "TRUE",
-      });
-
-      if (response != null && response.statusCode == 200) {
-        print("✅ Bildirim okundu olarak işaretlendi: $notificationId");
-      } else {
-        print("❌ Bildirim güncellenemedi: $notificationId");
-      }
-    } catch (e) {
-      print("Okundu işaretlenemedi: $e");
-    }
-  }
-*/
-  static Future<void> markNotificationAsRead(
-    String notificationId,
-    String userId,
-  ) async {
-    try {
-      print("📢 Bildirim okunuyor - ID: $notificationId");
-
-      final response = await _postRequest({
-        "action": "updateNotification",
-        "notifications_id": notificationId, // 🔥 SADECE notificationId gönder
-        "is_read": "TRUE",
-      });
-
-      if (response != null && response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true) {
-          print("✅ Bildirim okundu olarak işaretlendi: $notificationId");
-        } else {
-          print("❌ Bildirim güncellenemedi: ${decoded['error']}");
-        }
-      } else {
-        print("❌ HTTP Hatası: ${response?.statusCode}");
-      }
-    } catch (e) {
-      print("Okundu işaretlenemedi: $e");
-    }
-  }
-
-  static Future<int> getUnreadNotificationCount(String userId) async {
-    final notifications = await getNotificationsForUser(userId);
-    final unreadCount = notifications.where((n) {
-      String isRead = n['is_read']?.toString().toUpperCase() ?? '';
-      return isRead != 'TRUE';
-    }).length;
-
-    print("📊 Okunmamış bildirim sayısı: $unreadCount");
-    return unreadCount;
-  }
-
-  static Future<bool> addNotification(
-    Map<String, dynamic> notificationData,
-  ) async {
-    print("📢 addNotification çağrıldı");
-    //  print("   recipient_id: ${notificationData['recipient_id']}");
-    print("   title: ${notificationData['title']}");
-    print(
-      "   recipient_id: ${notificationData['recipient_id']} (${notificationData['recipient_id'].runtimeType})",
-    );
-    print("   title: ${notificationData['title']}");
-
-    final response = await _postRequest({
-      "action": "insert",
-      "table": "notifications",
-      "data": notificationData,
-    });
-
-    print("   Response status: ${response?.statusCode}");
-    print("   Response body: ${response?.body}");
-
-    if (response != null && response.statusCode == 200) {
-      try {
-        final decoded = jsonDecode(response.body);
-        final success = decoded['success'] == true;
-        if (success) {
-          print("✅ Bildirim başarıyla eklendi");
-        } else {
-          print("❌ Bildirim eklenemedi: ${decoded['error']}");
-        }
-        return success;
-      } catch (e) {
-        print("❌ JSON parse hatası: $e");
-        return false;
-      }
-    }
-    return false;
-  }
-
-  static DateTime _parseDateTime(String dateTimeStr) {
-    try {
-      if (dateTimeStr.contains('T')) {
-        return DateTime.parse(dateTimeStr);
-      } else if (dateTimeStr.contains(' ')) {
-        return DateTime.parse(dateTimeStr.replaceAll(' ', 'T'));
-      }
-      return DateTime(2000);
-    } catch (e) {
-      return DateTime(2000);
-    }
-  }
-
-  // =========================================================================
-  // ✅ COACH İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Coach>> getCoaches() async {
-    final rawData = await fetchTable("coaches");
-
-    final coaches = <Coach>[];
-    for (var item in rawData) {
-      final Map<String, dynamic> cleanItem = {};
-      item.forEach((key, value) {
-        String cleanKey = key.toString().trim();
-        cleanItem[cleanKey] = value;
-      });
-
-      final coach = Coach.fromJson(cleanItem);
-      if (coach.coach_id.isNotEmpty) {
-        coaches.add(coach);
-        print(
-          "✅ PARSED: coach_id='${coach.coach_id}', user_id='${coach.user_id}'",
-        );
-      } else {
-        print("⚠️ SKIPPED: coach_id boş");
-      }
-    }
-
-    print("=== SONUÇ: ${coaches.length} coach başarıyla yüklendi");
-    return coaches;
-  }
-
-  static Future<bool> registerCoach(Coach newCoach) async {
-    final coaches = await getCoaches();
-
-    int nextId = 1;
-    if (coaches.isNotEmpty) {
-      final ids = coaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
-      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
-    }
-
-    final updatedCoachData = newCoach.toJson();
-    updatedCoachData['coach_id'] = nextId.toString();
-
-    return await insertData("coaches", updatedCoachData);
-  }
-
-  static Future<bool> registerCoachWithAutoId(Coach newCoach) async {
-    return await registerCoach(newCoach);
-  }
-
-  static Future<bool> addCoachWithAutoId(Map<String, dynamic> coachData) async {
-    final allCoaches = await getCoaches();
-
-    int nextId = 1;
-    if (allCoaches.isNotEmpty) {
-      final ids = allCoaches.map((c) => int.tryParse(c.coach_id) ?? 0).toList();
-      nextId = ids.reduce((curr, next) => curr > next ? curr : next) + 1;
-    }
-
-    coachData['coach_id'] = nextId.toString();
-    return await insertData("coaches", coachData);
-  }
-
-  /*
-  // =========================================================================
-  // ✅ YOKLAMA İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Attendance>> getAttendances() async {
-    final rawData = await fetchTable("attendances");
-    return rawData.map((item) => Attendance.fromJson(item)).toList();
-  }
-*/
-  static Future<List<Attendance>> getAttendancesByStudent(
-    String studentId,
-  ) async {
-    final all = await getAttendances();
-    return all.where((a) => a.student_id == studentId).toList();
-  }
-
-  static Future<bool> saveAttendance(Attendance attendance) async {
-    print(
-      "💾 saveAttendance: Öğrenci=${attendance.student_id}, Tarih=${attendance.attendance_date}, Durum=${attendance.status}",
-    );
-
-    final response = await _postRequest({
-      "action": "saveAttendance",
-      "sheet": "attendances",
-      "data": attendance.toJson(),
-    });
-
-    if (response != null && response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      print("   Sonuç: ${decoded['success']}");
-      return decoded['success'] == true;
-    }
-    print("   ❌ Hata: ${response?.statusCode}");
-    return false;
-  }
-
-  static Future<List<Attendance>> getAttendances() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl?sheet=attendances'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> decoded = json.decode(response.body);
-
-        if (decoded['success'] == true) {
-          final List<dynamic> data = decoded['data'];
-          final List<Attendance> attendances = data.map((item) {
-            // 🔥 KRİTİK: status değerini doğru parse et
-            String statusValue = item['status']?.toString() ?? "FALSE";
-
-            // Eğer status "TRUE" veya "true" veya true (boolean) gelirse
-            bool isTrue = statusValue.toUpperCase() == "TRUE";
-
-            return Attendance(
-              attendances_id: item['attendances_id']?.toString() ?? '',
-              groups_id: item['groups_id']?.toString() ?? '',
-              student_id: item['student_id']?.toString() ?? '',
-              taken_by: item['taken_by']?.toString() ?? '',
-              attendance_date: item['attendance_date']?.toString() ?? '',
-              status: isTrue ? "TRUE" : "FALSE", // 🔥 DÜZELTİLDİ
-              note: item['note']?.toString() ?? '',
-            );
-          }).toList();
-
-          return attendances;
-        }
-      }
-      return [];
-    } catch (e) {
-      print("❌ getAttendances hatası: $e");
-      return [];
-    }
-  }
-
-  static Future<List<Attendance>> getAttendancesForGroup(String groupId) async {
-    final all = await getAttendances();
-
-    print("🔍 getAttendancesForGroup: groupId=$groupId");
-    print("   Toplam yoklama: ${all.length}");
-
-    final filtered = all.where((a) => a.groups_id == groupId).toList();
-
-    print("   Filtrelenmiş: ${filtered.length}");
-    for (var a in filtered) {
-      final cleanDate = a.attendance_date.split('T')[0];
-      print(
-        "      Tarih: $cleanDate, Öğrenci: ${a.student_id}, Durum: ${a.status}",
-      );
-    }
-
-    return filtered;
-  }
-
-  static Future<List<Attendance>> getTodayAttendance(String groupId) async {
-    final allAttendances = await getAttendancesForGroup(groupId);
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    return allAttendances
-        .where((a) => a.attendance_date.contains(today))
-        .toList();
-  }
-
-  static Future<bool> saveBulkAttendance(List<Attendance> attendances) async {
-    bool allSuccess = true;
-    for (var att in attendances) {
-      final success = await saveAttendance(att);
-      if (!success) allSuccess = false;
-    }
-    return allSuccess;
-  }
-
-  // =========================================================================
-  // ✅ ÖDEME İŞLEMLERİ
-  // =========================================================================
-  static Future<List<Payment>> getPayments() async {
-    final rawData = await fetchTable("payments");
-    return rawData.map((item) => Payment.fromJson(item)).toList();
-  }
-
-  static Future<List<Payment>> getPaymentsByStudent(String studentId) async {
-    final allPayments = await getPayments();
-    return allPayments.where((p) => p.student_id == studentId).toList();
-  }
-
-  static Future<bool> addPayment(Payment payment) async {
-    final response = await _postRequest({
-      "action": "insert",
-      "table": "payments",
-      "data": payment.toJson(),
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ ÖĞRENCİ NOTLARI İŞLEMLERİ
-  // =========================================================================
-  static Future<List<StudentNote>> getStudentNotes() async {
-    final rawData = await fetchTable("student_notes");
-    return rawData.map((item) => StudentNote.fromJson(item)).toList();
-  }
-
-  static Future<List<StudentNote>> getStudentNotesByStudent(
-    String studentId,
-  ) async {
-    final all = await getStudentNotes();
-    return all.where((n) => n.student_id == studentId).toList();
-  }
-
-  static Future<bool> addStudentNote(StudentNote note) async {
-    final response = await _postRequest({
-      "action": "insert",
-      "table": "student_notes",
-      "data": note.toJson(),
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ VELİ-ÖĞRENCİ İLİŞKİLERİ
-  // =========================================================================
-  static Future<List<ParentStudent>> getParentStudents() async {
-    final rawData = await fetchTable("parent_student");
-    return rawData.map((item) => ParentStudent.fromJson(item)).toList();
-  }
-
-  static Future<List<ParentStudent>> getStudentsByParent(
-    String parentId,
-  ) async {
-    final all = await getParentStudents();
-    return all.where((ps) => ps.parent_id == parentId).toList();
-  }
-
-  static Future<List<ParentStudent>> getParentsByStudent(
-    String studentId,
-  ) async {
-    final all = await getParentStudents();
-    return all.where((ps) => ps.student_id == studentId).toList();
-  }
-
-  static Future<bool> addParentStudent(
-    String parentId,
-    String studentId,
-  ) async {
-    return await insertData("parent_student", {
-      "parent_id": parentId,
-      "student_id": studentId,
-    });
-  }
-
-  // =========================================================================
-  // ✅ GENEL VERİ EKLEME
-  // =========================================================================
-  static Future<bool> insertData(
-    String tableName,
-    Map<String, dynamic> data,
-  ) async {
-    final response = await _postRequest({
-      "action": "insert",
-      "table": tableName,
-      "data": data,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ MASTER KAYIT
-  // =========================================================================
-  static Future<bool> registerEverywhere(Map<String, dynamic> allInfo) async {
-    final response = await _postRequest({
-      "action": "registerEverywhere",
-      "data": allInfo,
-    });
-
-    if (response != null && response.statusCode == 200) {
-      return jsonDecode(response.body)['success'] == true;
-    }
-    return false;
-  }
-
-  // =========================================================================
-  // ✅ ÖDEME BİLDİRİMİ GÖNDER (KİŞİYE ÖZEL)
-  // =========================================================================
-  static Future<bool> sendPaymentReminderToStudent(
-    String studentId,
-    String studentName,
-    double amount,
-    String dueDate,
-  ) async {
-    final notifData = {
-      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
-      "sender_id": "Admin",
-      "recipient_id": studentId, // 🔥 KİŞİYE ÖZEL!
-      "groups_id": "", // Boş, çünkü kişiye özel
-      "title": "💰 Ödeme Hatırlatması",
-      "message":
-          "Sayın $studentName, $dueDate tarihinde sona eren $amount TL aidat ödemeniz bulunmaktadır. Lütfen en kısa sürede ödemenizi gerçekleştiriniz.",
-      "type": "payment_reminder",
-      "is_read": "FALSE",
-      "sent_at": DateTime.now().toIso8601String(),
-    };
-
-    return await addNotification(notifData);
-  }
-
-  // Tüm ödeme yapmayan öğrencilere toplu bildirim gönder
-  static Future<int> sendPaymentRemindersToAllLateStudents() async {
-    try {
-      final allPayments = await getPayments();
-      final allStudents = await getStudentsOnly();
-      final today = DateTime.now();
-
-      // Ödeme yapmayan öğrencileri bul (status != 'paid' veya due_date geçmiş)
-      final latePayments = allPayments.where((p) {
-        final dueDate = DateTime.tryParse(p.due_date);
-        final isLate = dueDate != null && dueDate.isBefore(today);
-        final isNotPaid = p.status?.toLowerCase() != 'paid';
-        return isLate && isNotPaid;
-      }).toList();
-
-      int sentCount = 0;
-
-      for (var payment in latePayments) {
-        final student = allStudents.firstWhere(
-          (s) => s.app.toString() == payment.student_id,
-          orElse: () => Users(
-            app: "",
-            branches_id: "",
-            first_name: "Öğrenci",
-            last_name: "",
-            email: "",
-            phone: "",
-            password_hash: "",
-            role: "",
-            profile_photo_url: "",
-            amount: "",
-            b_date: "",
-            created_at: "",
-            last_login: "",
-            is_active: "",
-          ),
-        );
-
-        final success = await sendPaymentReminderToStudent(
-          payment.student_id,
-          "${student.first_name} ${student.last_name}",
-          double.tryParse(payment.amount) ?? 0,
-          payment.due_date,
-        );
-
-        if (success) sentCount++;
-      }
-
-      print("✅ Ödeme bildirimi gönderildi: $sentCount öğrenciye");
-      return sentCount;
-    } catch (e) {
-      print("❌ Ödeme bildirimi gönderilemedi: $e");
-      return 0;
-    }
-  }
-
-  // =========================================================================
-  // ✅ DİREKT ÖĞRENCİYE DUYURU GÖNDER (GRUPTAN BAĞIMSIZ)
-  // =========================================================================
-  static Future<bool> sendAnnouncementToStudent(
-    String studentId,
-    String title,
-    String message,
-  ) async {
-    final notifData = {
-      "notifications_id": "NTF-${DateTime.now().millisecondsSinceEpoch}",
-      "sender_id": "Admin",
-      "recipient_id": studentId, // 🔥 KİŞİYE ÖZEL!
-      "groups_id": "", // Boş, çünkü kişiye özel
-      "title": title,
-      "message": message,
-      "type": "announcement",
-      "is_read": "FALSE",
-      "sent_at": DateTime.now().toIso8601String(),
-    };
-
-    return await addNotification(notifData);
-  }
-}
-*/
-
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:my_app/datapage/data_page/data.dart';
+import 'package:my_app/local/local_db.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:io';
@@ -1549,7 +117,7 @@ class GoogleSheetService {
   static final DataCache _cache = DataCache();
 
   static const String _baseUrl =
-      "https://script.google.com/macros/s/AKfycbwHaxA62z-nOKcLtaHd8FH8ri2jDqFFTuUi5wNqkeeb9WH6y5w7L6FReXyq4ICYynBA/exec";
+      "https://script.google.com/macros/s/AKfycbyiLiLSmKbjmJ9UcPGn1OdrkKCjJwaXM4NR2d4oy_ix3keLJ-ZrIbgxpWNtKATbg_3H/exec";
 
   // =========================================================================
   // 🔥 MERKEZİ POST FONKSİYONU (302 YÖNLENDİRMESİNİ OTOMATİK ÇÖZER)
@@ -1557,6 +125,8 @@ class GoogleSheetService {
   static Future<http.Response?> _postRequest(
     Map<String, dynamic> bodyData,
   ) async {
+    print("📡 POST isteği: ${bodyData['action']}");
+
     try {
       var response = await http.post(
         Uri.parse(_baseUrl),
@@ -1564,8 +134,12 @@ class GoogleSheetService {
         body: jsonEncode(bodyData),
       );
 
+      print("📡 Response status: ${response.statusCode}");
+      print("📡 Response body: ${response.body}");
+
       if (response.statusCode == 302) {
         String? redirectUrl = response.headers['location'];
+        print("📡 302 Redirect: $redirectUrl");
 
         if (redirectUrl == null && response.body.contains('HREF="')) {
           final start = response.body.indexOf('HREF="') + 6;
@@ -1577,12 +151,13 @@ class GoogleSheetService {
 
         if (redirectUrl != null) {
           response = await http.get(Uri.parse(redirectUrl));
+          print("📡 Redirect response status: ${response.statusCode}");
         }
       }
 
       return response;
     } catch (e) {
-      // print("POST İstek Hatası: $e");
+      print("❌ POST İstek Hatası: $e");
       return null;
     }
   }
@@ -1932,125 +507,6 @@ class GoogleSheetService {
   }
 
   /*
-
-  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
-    String userId,
-  ) async {
-    try {
-      print("🔍 getNotificationsForUser çağrıldı - userId: '$userId'");
-
-      final rawData = await fetchTableCached(
-        'notifications',
-        forceRefresh: false,
-      );
-      print("📊 Toplam bildirim: ${rawData.length}");
-
-      if (rawData.isEmpty) return [];
-
-      bool isAdmin =
-          userId.isEmpty ||
-          userId == "Admin" ||
-          userId == "admin" ||
-          userId == "ADMIN";
-
-      List<String> userGroups = [];
-
-      if (!isAdmin) {
-        final allUsers = await getUsersCached();
-        final currentUser = allUsers.firstWhere(
-          (u) => u.app.toString() == userId,
-          orElse: () => Users(
-            app: "",
-            first_name: "",
-            last_name: "",
-            email: "",
-            phone: "",
-            password_hash: "",
-            role: "",
-            profile_photo_url: "",
-            amount: "",
-            b_date: "",
-            created_at: "",
-            last_login: "",
-            is_active: "",
-            branches_id: "",
-          ),
-        );
-
-        if (currentUser.role.toLowerCase() == 'coach' ||
-            currentUser.role.toLowerCase() == 'antrenör') {
-          final coaches = await getCoachesCached();
-          final currentCoach = coaches.firstWhere(
-            (c) => c.user_id == userId,
-            orElse: () => Coach(
-              coach_id: "",
-              user_id: "",
-              branches_id: "",
-              sports_id: "",
-              bio: "",
-              certificate_info: "",
-              monthly_salary: "",
-              hired_at: "",
-            ),
-          );
-          if (currentCoach.coach_id.isNotEmpty) {
-            final groups = await getGroupsByCoachCached(currentCoach.coach_id);
-            userGroups = groups.map((g) => g.groups_id.toString()).toList();
-            print("📚 Antrenörün grupları: $userGroups");
-          }
-        } else if (currentUser.role.toLowerCase() == 'student') {
-          final groupRelations = await getGroupStudentsByStudentIdCached(
-            userId,
-          );
-          userGroups = groupRelations
-              .where((rel) => rel.is_active.toString().toUpperCase() == "TRUE")
-              .map((rel) => rel.groups_id.toString())
-              .toList();
-          print("📚 Öğrencinin grupları: $userGroups");
-        }
-      } else {
-        print("👑 Admin kullanıcı - tüm bildirimleri görecek");
-      }
-
-      List<Map<String, dynamic>> notifications = [];
-
-      for (var item in rawData) {
-        Map<String, dynamic> notif = Map<String, dynamic>.from(item);
-        String recipientId = notif['recipient_id']?.toString() ?? '';
-
-        bool shouldAdd = false;
-
-        if (recipientId == 'all' ||
-            recipientId == 'Tümü' ||
-            recipientId == 'ALL') {
-          shouldAdd = true;
-        } else if (isAdmin) {
-          shouldAdd = true;
-        } else if (recipientId == userId) {
-          shouldAdd = true;
-        } else if (userGroups.contains(recipientId)) {
-          shouldAdd = true;
-        }
-
-        if (shouldAdd) {
-          notifications.add(notif);
-        }
-      }
-
-      notifications.sort((a, b) {
-        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
-        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
-        return dateB.compareTo(dateA);
-      });
-
-      print("📋 Bildirimler yüklendi: ${notifications.length} adet");
-      return notifications;
-    } catch (e) {
-      // print("Bildirimler alınamadı: $e");
-      return [];
-    }
-  }
-*/
   static Future<List<Map<String, dynamic>>> getNotificationsForUser(
     String userId,
   ) async {
@@ -2202,6 +658,52 @@ class GoogleSheetService {
       return [];
     }
   }
+*/
+  static Future<List<Map<String, dynamic>>> getNotificationsForUser(
+    String userId,
+  ) async {
+    try {
+      final rawData = await fetchTableCached(
+        'notifications',
+        forceRefresh: true,
+      );
+      if (rawData.isEmpty) return [];
+
+      print("========== GET NOTIFICATIONS (BASİT) ==========");
+      print("Kullanıcı ID: '$userId'");
+
+      final String userIdStr = userId.toString().trim();
+
+      List<Map<String, dynamic>> notifications = [];
+
+      for (var item in rawData) {
+        String recipientId = item['recipient_id']?.toString().trim() ?? '';
+        String title = item['title']?.toString() ?? '';
+
+        // 🔥 SADECE İKİ KURAL
+        if (recipientId == 'all' || recipientId == userIdStr) {
+          print("✅ EKLENDI: $title (recipient_id: $recipientId)");
+          notifications.add(Map<String, dynamic>.from(item));
+        } else {
+          print(
+            "❌ EKLENMEDI: $title (recipient_id: $recipientId != $userIdStr)",
+          );
+        }
+      }
+
+      notifications.sort((a, b) {
+        DateTime dateA = _parseDateTime(a['sent_at']?.toString() ?? '');
+        DateTime dateB = _parseDateTime(b['sent_at']?.toString() ?? '');
+        return dateB.compareTo(dateA);
+      });
+
+      print("📊 Filtrelenmiş duyuru sayısı: ${notifications.length}");
+      return notifications;
+    } catch (e) {
+      print("Bildirimler alınamadı: $e");
+      return [];
+    }
+  }
 
   static Future<void> markNotificationAsRead(
     String notificationId,
@@ -2228,7 +730,7 @@ class GoogleSheetService {
         print("❌ HTTP Hatası: ${response?.statusCode}");
       }
     } catch (e) {
-      // print("Okundu işaretlenemedi: $e");
+      print("Okundu işaretlenemedi: $e");
     }
   }
 
@@ -2239,7 +741,7 @@ class GoogleSheetService {
       return isRead != 'TRUE';
     }).length;
 
-    // print("📊 Okunmamış bildirim sayısı: $unreadCount");
+    print("📊 Okunmamış bildirim sayısı: $unreadCount");
     return unreadCount;
   }
 
@@ -2416,35 +918,6 @@ class GoogleSheetService {
   // ✅ FOTOĞRAF YÜKLEME
   // =========================================================================
 
-  static Future<String?> uploadImageToDrive(
-    File imageFile,
-    String fileName,
-  ) async {
-    try {
-      List<int> imageBytes = await imageFile.readAsBytes();
-      String base64Image = base64Encode(imageBytes);
-
-      final response = await _postRequest({
-        "action": "uploadImage",
-        "file_name": fileName,
-        "file_data": base64Image,
-        "folder": "profile_photos",
-      });
-
-      if (response != null && response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true) {
-          // print("✅ Fotoğraf yüklendi: ${decoded['url']}");
-          return decoded['url'];
-        }
-      }
-      return null;
-    } catch (e) {
-      //    print("Fotoğraf yükleme hatası: $e");
-      return null;
-    }
-  }
-
   // =========================================================================
   // ✅ KULLANICI İŞLEMLERİ (LOGIN, REGISTER, UPDATE)
   // =========================================================================
@@ -2452,6 +925,7 @@ class GoogleSheetService {
   static Future<Users?> login(String email, String password) async {
     print("========== LOGIN TEST ==========");
     print("Email: $email");
+    print("Password: $password");
 
     final response = await _postRequest({
       "action": "login",
@@ -2459,42 +933,42 @@ class GoogleSheetService {
       "password": password,
     });
 
-    // print("Response status: ${response?.statusCode}");
-    // print("Response body: ${response?.body}");
+    print("Response status: ${response?.statusCode}");
+    print("Response body: ${response?.body}");
 
     if (response != null && response.statusCode == 200) {
       try {
         final decoded = json.decode(response.body);
-        //   print("Decoded: $decoded");
+        print("Decoded: $decoded");
 
         if (decoded['success'] == true) {
           Map<String, dynamic>? userMap;
 
           if (decoded['data'] != null && decoded['data']['user'] != null) {
             userMap = Map<String, dynamic>.from(decoded['data']['user']);
-            // print("✅ userMap data.user'dan alındı");
+            print("✅ userMap data.user'dan alındı");
           } else if (decoded['user'] != null) {
             userMap = Map<String, dynamic>.from(decoded['user']);
-            // print("✅ userMap user'dan alındı");
+            print("✅ userMap user'dan alındı");
           }
 
           if (userMap != null) {
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('logged_user', jsonEncode(userMap));
 
-            // print("✅ Login başarılı! Kullanıcı: ${userMap['email']}");
+            print("✅ Login başarılı! Kullanıcı: ${userMap['email']}");
             return Users.fromJson(userMap);
           } else {
-            //  print("❌ userMap oluşturulamadı");
+            print("❌ userMap oluşturulamadı");
           }
         } else {
-          // print("❌ Login başarısız: ${decoded['error']}");
+          print("❌ Login başarısız: ${decoded['error']}");
         }
       } catch (e) {
-        // print("❌ JSON parse hatası: $e");
+        print("❌ JSON parse hatası: $e");
       }
     } else {
-      // print("❌ HTTP hatası: ${response?.statusCode}");
+      print("❌ HTTP hatası: ${response?.statusCode}");
     }
 
     return null;
@@ -3086,18 +1560,29 @@ class GoogleSheetService {
   // =========================================================================
 
   static Future<bool> registerEverywhere(Map<String, dynamic> allInfo) async {
+    print("========== REGISTER EVERYWHERE ==========");
+    print("Gelen allInfo: ${jsonEncode(allInfo)}");
+
     final response = await _postRequest({
       "action": "registerEverywhere",
       "data": allInfo,
     });
 
+    print("Response status: ${response?.statusCode}");
+    if (response != null) {
+      print("Response body: ${response.body}");
+    }
+
     if (response != null && response.statusCode == 200) {
-      final success = jsonDecode(response.body)['success'] == true;
+      final decoded = jsonDecode(response.body);
+      print("Decoded: $decoded");
+      final success = decoded['success'] == true;
       if (success) {
         invalidateAllCache();
       }
       return success;
     }
+    print("❌ registerEverywhere BAŞARISIZ!");
     return false;
   }
 
@@ -3304,5 +1789,193 @@ class GoogleSheetService {
       print("Push notification gönderilemedi: $e");
       return false;
     }
+  }
+  // GoogleSheetService.dart'a ekle
+
+  static Future<List<dynamic>> getDataWithOffline({
+    required String sheetName,
+    required String idField,
+  }) async {
+    final offlineData = await LocalDatabaseService().getAll(sheetName);
+
+    if (offlineData.isNotEmpty) {
+      return offlineData;
+    }
+
+    final freshData = await fetchTable(sheetName);
+    for (var item in freshData) {
+      final id =
+          item[idField]?.toString() ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+      await LocalDatabaseService().insertOrUpdate(sheetName, id, item);
+    }
+
+    return freshData;
+  }
+
+  static Future<bool> saveDataWithOffline({
+    required String tableName,
+    required Map<String, dynamic> data,
+  }) async {
+    // Önce local'e kaydet
+    final tempId =
+        data['${tableName}_id'] ??
+        DateTime.now().millisecondsSinceEpoch.toString();
+    await LocalDatabaseService().insertOrUpdate(tableName, tempId, data);
+
+    // Pending queue'ye ekle (arka planda senkronize edilecek)
+    await LocalDatabaseService().addPendingOperation(
+      operation: 'insert',
+      tableName: tableName,
+      data: data,
+    );
+
+    return true;
+  }
+  // GoogleSheetService.dart içine ekle
+
+  static Future<bool> updateData(
+    String tableName,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _postRequest({
+      "action": "update",
+      "table": tableName,
+      "data": data,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return decoded['success'] == true;
+    }
+    return false;
+  }
+
+  static Future<bool> deleteData(
+    String tableName,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _postRequest({
+      "action": "delete",
+      "table": tableName,
+      "data": data,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return decoded['success'] == true;
+    }
+    return false;
+  }
+
+  // GoogleSheetService.dart
+  static Future<bool> updatePassword(
+    String userId,
+    String hashedPassword,
+  ) async {
+    final response = await _postRequest({
+      "action": "updatePassword",
+      "user_id": userId,
+      "password_hash": hashedPassword,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      final success = decoded['success'] == true;
+      if (success) {
+        invalidateCache('users');
+      }
+      return success;
+    }
+    return false;
+  }
+
+  static Future<String?> uploadImageToDrive(
+    File imageFile,
+    String fileName,
+    String folderName,
+  ) async {
+    try {
+      print("📸 Yükleniyor: $fileName -> $folderName");
+      print("📸 Dosya boyutu: ${await imageFile.length()} bytes");
+
+      List<int> imageBytes = await imageFile.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+      print("📸 Base64 uzunluğu: ${base64Image.length}");
+
+      final response = await _postRequest({
+        "action": "uploadImage",
+        "file_name": fileName,
+        "file_data": base64Image,
+        "folder": folderName,
+      });
+
+      print("📸 HTTP Status: ${response?.statusCode}");
+
+      if (response != null) {
+        print("📸 Response body: ${response.body}");
+      }
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        print("📸 Decoded: $decoded");
+
+        if (decoded['success'] == true) {
+          print("✅ Fotoğraf yüklendi: $fileName");
+          return fileName;
+        } else {
+          print("❌ API hatası: ${decoded['error']}");
+        }
+      } else {
+        print("❌ HTTP hatası: ${response?.statusCode}");
+      }
+      return null;
+    } catch (e) {
+      print("❌ Fotoğraf yükleme hatası: $e");
+      return null;
+    }
+  }
+
+  // Fotoğraf URL'ini al (dosya adı ile)
+  static Future<String?> getImageUrlFromDrive(
+    String fileName,
+    String folderName,
+  ) async {
+    if (fileName.isEmpty) return null;
+
+    try {
+      final response = await _postRequest({
+        "action": "getImageUrl",
+        "file_name": fileName,
+        "folder": folderName,
+      });
+
+      if (response != null && response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          return decoded['data']['url'];
+        }
+      }
+      return null;
+    } catch (e) {
+      print("Resim URL alma hatası: $e");
+      return null;
+    }
+  }
+
+  static Future<bool> updateUser(Map<String, dynamic> userData) async {
+    final response = await _postRequest({
+      "action": "updateUser",
+      "data": userData,
+    });
+
+    if (response != null && response.statusCode == 200) {
+      final success = jsonDecode(response.body)['success'] == true;
+      if (success) {
+        invalidateCache('users');
+      }
+      return success;
+    }
+    return false;
   }
 }
